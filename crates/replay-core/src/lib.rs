@@ -5,12 +5,14 @@ pub mod format;
 pub mod gamedata;
 pub mod header;
 pub mod section;
+pub mod timeline;
 
 use analysis::{ApmSample, BuildOrderEntry, PlayerApm};
 use command::GameCommand;
 use error::{ReplayError, Result};
 use format::Format;
 use header::Header;
+use timeline::TimelineSnapshot;
 
 /// A fully parsed replay.
 #[derive(Debug, Clone)]
@@ -19,6 +21,7 @@ pub struct Replay {
     pub commands: Vec<GameCommand>,
     pub build_order: Vec<BuildOrderEntry>,
     pub player_apm: Vec<PlayerApm>,
+    pub timeline: Vec<TimelineSnapshot>,
 }
 
 impl Replay {
@@ -101,11 +104,16 @@ pub fn parse(data: &[u8]) -> Result<Replay> {
     let build_order = analysis::extract_build_order(&commands);
     let player_apm = analysis::calculate_apm(&commands, hdr.frame_count);
 
+    // Build timeline from player IDs in the header.
+    let player_ids: Vec<u8> = hdr.players.iter().map(|p| p.player_id).collect();
+    let tl = timeline::build_timeline(&build_order, &player_ids);
+
     Ok(Replay {
         header: hdr,
         commands,
         build_order,
         player_apm,
+        timeline: tl,
     })
 }
 

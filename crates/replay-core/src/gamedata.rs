@@ -264,6 +264,192 @@ pub fn is_building(id: u16) -> bool {
     matches!(id, 106..=125 | 130..=146 | 149 | 154..=172)
 }
 
+/// Cost of a unit or building: (minerals, gas, supply_cost).
+/// Supply cost is 0 for buildings. Zerglings return 1 (pair costs 50/0/1 each).
+pub fn unit_cost(id: u16) -> (u32, u32, u32) {
+    match id {
+        // Terran units
+        0 => (50, 0, 1),     // Marine
+        1 => (25, 75, 1),    // Ghost
+        2 => (75, 0, 2),     // Vulture
+        3 => (100, 50, 2),   // Goliath
+        5 => (150, 100, 2),  // Siege Tank
+        7 => (50, 0, 1),     // SCV
+        8 => (150, 100, 2),  // Wraith
+        9 => (100, 225, 2),  // Science Vessel
+        11 => (100, 100, 2), // Dropship
+        12 => (400, 300, 6), // Battlecruiser
+        32 => (50, 25, 1),   // Firebat
+        34 => (50, 25, 1),   // Medic
+        58 => (250, 125, 3), // Valkyrie
+        // Zerg units
+        37 => (25, 0, 1),     // Zergling (half of pair)
+        38 => (75, 25, 1),    // Hydralisk
+        39 => (200, 200, 4),  // Ultralisk
+        41 => (50, 0, 1),     // Drone
+        42 => (100, 0, 0),    // Overlord (provides supply)
+        43 => (100, 100, 2),  // Mutalisk
+        44 => (150, 200, 2),  // Guardian (morph from muta)
+        45 => (100, 100, 2),  // Queen
+        46 => (50, 150, 2),   // Defiler
+        47 => (13, 38, 1),    // Scourge (half of pair)
+        62 => (250, 150, 2),  // Devourer (morph from muta)
+        103 => (125, 125, 2), // Lurker (morph from hydra, additional cost)
+        // Protoss units
+        60 => (150, 100, 2), // Corsair
+        61 => (125, 100, 2), // Dark Templar
+        63 => (0, 0, 4),     // Dark Archon (merge)
+        64 => (50, 0, 1),    // Probe
+        65 => (100, 0, 2),   // Zealot
+        66 => (125, 50, 2),  // Dragoon
+        67 => (50, 150, 2),  // High Templar
+        68 => (0, 0, 4),     // Archon (merge)
+        69 => (200, 0, 2),   // Shuttle
+        70 => (275, 125, 3), // Scout
+        71 => (100, 350, 4), // Arbiter
+        72 => (350, 250, 6), // Carrier
+        73 => (25, 0, 0),    // Interceptor
+        83 => (200, 100, 4), // Reaver
+        84 => (25, 75, 1),   // Observer
+        85 => (15, 0, 0),    // Scarab
+        // Terran buildings
+        106 => (400, 0, 0),   // Command Center
+        107 => (50, 50, 0),   // Comsat Station
+        108 => (100, 100, 0), // Nuclear Silo
+        109 => (100, 0, 0),   // Supply Depot
+        110 => (100, 0, 0),   // Refinery
+        111 => (150, 0, 0),   // Barracks
+        112 => (150, 0, 0),   // Academy
+        113 => (200, 100, 0), // Factory
+        114 => (150, 100, 0), // Starport
+        115 => (50, 50, 0),   // Control Tower
+        116 => (100, 150, 0), // Science Facility
+        117 => (50, 50, 0),   // Covert Ops
+        118 => (50, 50, 0),   // Physics Lab
+        120 => (50, 50, 0),   // Machine Shop
+        122 => (125, 0, 0),   // Engineering Bay
+        123 => (100, 50, 0),  // Armory
+        124 => (75, 0, 0),    // Missile Turret
+        125 => (100, 0, 0),   // Bunker
+        // Zerg buildings
+        131 => (300, 0, 0),   // Hatchery
+        132 => (150, 100, 0), // Lair (morph)
+        133 => (200, 150, 0), // Hive (morph)
+        134 => (160, 0, 0),   // Nydus Canal
+        135 => (100, 50, 0),  // Hydralisk Den
+        136 => (100, 100, 0), // Defiler Mound
+        137 => (100, 150, 0), // Greater Spire (morph)
+        138 => (150, 100, 0), // Queen's Nest
+        139 => (75, 0, 0),    // Evolution Chamber
+        140 => (150, 200, 0), // Ultralisk Cavern
+        141 => (200, 150, 0), // Spire
+        142 => (200, 0, 0),   // Spawning Pool
+        143 => (75, 0, 0),    // Creep Colony
+        144 => (50, 0, 0),    // Spore Colony (morph)
+        146 => (50, 0, 0),    // Sunken Colony (morph)
+        149 => (50, 0, 0),    // Extractor
+        // Protoss buildings
+        154 => (400, 0, 0),   // Nexus
+        155 => (200, 200, 0), // Robotics Facility
+        156 => (100, 0, 0),   // Pylon
+        157 => (100, 0, 0),   // Assimilator
+        159 => (50, 100, 0),  // Observatory
+        160 => (150, 0, 0),   // Gateway
+        162 => (150, 0, 0),   // Photon Cannon
+        163 => (150, 100, 0), // Citadel of Adun
+        164 => (200, 0, 0),   // Cybernetics Core
+        165 => (150, 200, 0), // Templar Archives
+        166 => (150, 0, 0),   // Forge
+        167 => (150, 150, 0), // Stargate
+        169 => (300, 200, 0), // Fleet Beacon
+        170 => (200, 150, 0), // Arbiter Tribunal
+        171 => (150, 100, 0), // Robotics Support Bay
+        172 => (100, 0, 0),   // Shield Battery
+        _ => (0, 0, 0),
+    }
+}
+
+/// Supply provided by a unit/building.
+pub fn supply_provided(id: u16) -> u32 {
+    match id {
+        106 => 10, // Command Center
+        109 => 8,  // Supply Depot
+        131 => 2,  // Hatchery (1 larva slot = 2 supply in BW)
+        132 => 2,  // Lair
+        133 => 2,  // Hive
+        42 => 8,   // Overlord
+        154 => 9,  // Nexus
+        156 => 8,  // Pylon
+        _ => 0,
+    }
+}
+
+/// Cost of a tech research: (minerals, gas).
+pub fn tech_cost(id: u8) -> (u32, u32) {
+    match id {
+        0 => (100, 100),  // Stim Packs
+        1 => (200, 200),  // Lockdown
+        2 => (200, 200),  // EMP Shockwave
+        3 => (100, 100),  // Spider Mines
+        5 => (150, 150),  // Tank Siege Mode
+        7 => (200, 200),  // Irradiate
+        8 => (100, 100),  // Yamato Gun
+        9 => (150, 150),  // Cloaking Field
+        10 => (100, 100), // Personnel Cloaking
+        11 => (100, 100), // Burrowing
+        13 => (100, 100), // Spawn Broodlings
+        15 => (200, 100), // Plague
+        16 => (100, 100), // Consume
+        17 => (100, 100), // Ensnare
+        19 => (200, 200), // Psionic Storm
+        20 => (150, 150), // Hallucination
+        21 => (150, 150), // Recall
+        22 => (150, 100), // Stasis Field
+        24 => (100, 100), // Restoration
+        25 => (200, 200), // Disruption Web
+        27 => (200, 200), // Mind Control
+        30 => (100, 100), // Optical Flare
+        31 => (100, 100), // Maelstrom
+        32 => (200, 200), // Lurker Aspect
+        _ => (0, 0),
+    }
+}
+
+/// Cost of an upgrade at level 1: (minerals, gas).
+/// Many upgrades have increasing costs per level; this returns base cost.
+pub fn upgrade_cost(id: u8) -> (u32, u32) {
+    match id {
+        0 | 7 => (100, 100),           // Infantry Armor / Weapons
+        1 | 2 | 8 | 9 => (100, 100),   // Vehicle/Ship Plating/Weapons
+        3 | 10 | 11 => (100, 100),     // Zerg Carapace / Melee / Missile
+        4 | 12 => (100, 100),          // Zerg Flyer Carapace / Attacks
+        5 | 6 | 13 | 14 => (100, 100), // Protoss Armor / Weapons
+        15 => (200, 200),              // Plasma Shields
+        16 => (150, 150),              // U-238 Shells
+        17 => (100, 100),              // Ion Thrusters
+        24 => (200, 200),              // Ventral Sacs
+        25 => (150, 150),              // Antennae
+        26 => (150, 150),              // Pneumatized Carapace
+        27 => (100, 100),              // Metabolic Boost
+        28 => (200, 200),              // Adrenal Glands
+        29 => (150, 150),              // Muscular Augments
+        30 => (150, 150),              // Grooved Spines
+        33 => (150, 50),               // Singularity Charge
+        34 => (150, 150),              // Leg Enhancements
+        35 => (100, 50),               // Scarab Damage
+        36 => (200, 200),              // Reaver Capacity
+        37 => (150, 150),              // Gravitic Drive
+        38 => (100, 100),              // Sensor Array
+        39 => (150, 150),              // Gravitic Boosters
+        40 => (150, 150),              // Khaydarin Amulet
+        43 => (100, 100),              // Carrier Capacity
+        52 => (150, 150),              // Chitinous Plating
+        53 => (200, 200),              // Anabolic Synthesis
+        54 => (100, 100),              // Charon Boosters
+        _ => (0, 0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

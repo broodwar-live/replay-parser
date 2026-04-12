@@ -28,21 +28,28 @@ pub fn parse(data: &[u8]) -> Result<Header> {
     let (section0, consumed0) = section::decompress_section(data, 0)?;
     validate_magic(&section0)?;
 
+    // 1.21+ replays insert a 4-byte encoded length field after section 0.
+    let mut offset = consumed0;
+    if fmt == Format::Modern121 {
+        offset += 4;
+    }
+
     // Section 1: Header (633 bytes after decompression).
-    let (section1, consumed1) = section::decompress_section(data, consumed0)?;
+    let (section1, consumed1) = section::decompress_section(data, offset)?;
     let mut hdr = header::parse_header(&section1)?;
+    offset += consumed1;
 
     // Section 2: Commands (skip for now — we only need header + player data).
-    let (_section2, consumed2) = section::decompress_section(data, consumed0 + consumed1)?;
+    let (_section2, consumed2) = section::decompress_section(data, offset)?;
+    offset += consumed2;
 
     // Section 3: Map data (skip for now).
-    let (_section3, consumed3) =
-        section::decompress_section(data, consumed0 + consumed1 + consumed2)?;
+    let (_section3, consumed3) = section::decompress_section(data, offset)?;
+    offset += consumed3;
 
     // Section 4: Extended player names (768 bytes).
-    let offset4 = consumed0 + consumed1 + consumed2 + consumed3;
-    if offset4 < data.len()
-        && let Ok((section4, _)) = section::decompress_section(data, offset4)
+    if offset < data.len()
+        && let Ok((section4, _)) = section::decompress_section(data, offset)
     {
         header::apply_extended_names(&mut hdr, &section4);
     }

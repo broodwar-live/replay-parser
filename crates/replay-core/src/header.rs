@@ -160,21 +160,28 @@ fn read_u32(data: &[u8], offset: usize) -> u32 {
 }
 
 /// Decode a null-terminated byte string, trying UTF-8 first, then EUC-KR.
+/// Strips StarCraft text color/formatting control characters (bytes < 0x20
+/// except tab and newline).
 fn decode_string(bytes: &[u8]) -> String {
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    let raw = &bytes[..end];
+    // Strip SC control characters before decoding.
+    let raw: Vec<u8> = bytes[..end]
+        .iter()
+        .copied()
+        .filter(|&b| b >= 0x20 || b == b'\t' || b == b'\n')
+        .collect();
 
     if raw.is_empty() {
         return String::new();
     }
 
     // Try UTF-8 first.
-    if let Ok(s) = std::str::from_utf8(raw) {
+    if let Ok(s) = std::str::from_utf8(&raw) {
         return s.to_owned();
     }
 
     // Fall back to EUC-KR (CP949) for Korean names.
-    let (decoded, _, _) = encoding_rs::EUC_KR.decode(raw);
+    let (decoded, _, _) = encoding_rs::EUC_KR.decode(&raw);
     decoded.into_owned()
 }
 

@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1 align="center">
-  replay-parser
+  bw-engine
 </h1>
 
 <p align="center">

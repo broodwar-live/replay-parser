@@ -160,10 +160,7 @@ mod tests {
 
     #[test]
     fn test_parse_sections() {
-        let chk = build_chk(&[
-            (b"DIM ", &[4, 0, 4, 0]),
-            (b"ERA ", &[0, 0]),
-        ]);
+        let chk = build_chk(&[(b"DIM ", &[4, 0, 4, 0]), (b"ERA ", &[0, 0])]);
         let sections = parse_sections(&chk).unwrap();
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].tag_str(), "DIM ");
@@ -219,10 +216,7 @@ mod tests {
 
     #[test]
     fn test_missing_dim_section() {
-        let chk = build_chk(&[
-            (b"ERA ", &[0, 0]),
-            (b"MTXM", &[0, 0]),
-        ]);
+        let chk = build_chk(&[(b"ERA ", &[0, 0]), (b"MTXM", &[0, 0])]);
         let sections = parse_sections(&chk).unwrap();
         let result = extract_terrain(&sections);
         assert!(matches!(result, Err(EngineError::MissingSection { .. })));

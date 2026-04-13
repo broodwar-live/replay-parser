@@ -76,17 +76,17 @@ pub struct UnitState {
     pub movement_type: u8,
 
     // Combat
-    pub hp: i32,              // current HP in fp8
-    pub max_hp: i32,          // max HP in fp8
+    pub hp: i32,     // current HP in fp8
+    pub max_hp: i32, // max HP in fp8
     pub armor: u8,
-    pub ground_weapon: u8,    // weapon type id (130 = none)
-    pub air_weapon: u8,       // weapon type id (130 = none)
-    pub weapon_cooldown: u16, // frames until can fire again
+    pub ground_weapon: u8,          // weapon type id (130 = none)
+    pub air_weapon: u8,             // weapon type id (130 = none)
+    pub weapon_cooldown: u16,       // frames until can fire again
     pub attack_target: Option<u16>, // unit tag of attack target
 
     // Production
-    pub build_queue: Vec<u16>,   // unit types queued for training
-    pub build_timer: u16,        // frames remaining for current build
+    pub build_queue: Vec<u16>, // unit types queued for training
+    pub build_timer: u16,      // frames remaining for current build
     pub is_building: bool,
 }
 
@@ -158,7 +158,11 @@ impl UnitState {
         } else {
             // Decelerate when not facing target.
             let new_speed = self.current_speed - Fp8::from_raw(self.acceleration as i32);
-            self.current_speed = if new_speed.0 < 0 { Fp8::ZERO } else { new_speed };
+            self.current_speed = if new_speed.0 < 0 {
+                Fp8::ZERO
+            } else {
+                new_speed
+            };
         }
 
         // 4. Compute velocity vector from heading and current_speed.
@@ -261,7 +265,11 @@ mod tests {
         }
 
         // Unit should have moved east (x increased).
-        assert!(unit.pixel_x > 100, "unit should have moved east: x={}", unit.pixel_x);
+        assert!(
+            unit.pixel_x > 100,
+            "unit should have moved east: x={}",
+            unit.pixel_x
+        );
         // y should be approximately the same.
         assert!((unit.pixel_y - 100).abs() < 5, "y drift: {}", unit.pixel_y);
     }

@@ -137,8 +137,8 @@ impl Map {
     /// Get the mini-tile at walk-grid position (mx, my).
     #[must_use]
     pub fn mini_tile(&self, mx: u16, my: u16) -> Option<&MiniTile> {
-        let mw = self.width as u16 * 4;
-        let mh = self.height as u16 * 4;
+        let mw = self.width * 4;
+        let mh = self.height * 4;
         if mx >= mw || my >= mh {
             return None;
         }
@@ -269,8 +269,7 @@ fn apply_border_flags(tiles: &mut [Tile], width: usize, height: usize) {
         return;
     }
 
-    let strip =
-        TileFlags::WALKABLE | TileFlags::HAS_CREEP | TileFlags::PARTIALLY_WALKABLE;
+    let strip = TileFlags::WALKABLE | TileFlags::HAS_CREEP | TileFlags::PARTIALLY_WALKABLE;
 
     // Bottom-1 row: leftmost 5 and rightmost 5 tiles.
     let row = height - 2;
@@ -471,7 +470,7 @@ mod tests {
         let vf4_data = build_vf4_entry(&[MiniTile::WALKABLE; 16]);
         let cv5_data = build_cv5_entry(0, &[0u16; 16]);
 
-        let tile_id_oob: u16 = (1 << 4) | 0; // group 1, subtile 0
+        let tile_id_oob: u16 = 1 << 4 ; // group 1, subtile 0
         let mut mtxm = Vec::new();
         mtxm.extend_from_slice(&tile_id_oob.to_le_bytes());
         let mut chk = build_section(b"DIM ", &[1, 0, 1, 0]);

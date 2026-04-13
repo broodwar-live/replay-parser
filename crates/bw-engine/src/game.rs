@@ -20,8 +20,8 @@ pub const MAX_PLAYERS: usize = 8;
 pub struct PlayerState {
     pub minerals: i32,
     pub gas: i32,
-    pub supply_used: i32,   // in half-units (Marine = 2, Zergling = 1)
-    pub supply_max: i32,    // in half-units
+    pub supply_used: i32, // in half-units (Marine = 2, Zergling = 1)
+    pub supply_max: i32,  // in half-units
 }
 
 /// Commands that the engine understands.
@@ -239,10 +239,9 @@ impl Game {
     pub fn create_melee_starting_units(
         &mut self,
         start_locations: &[(u8, i32, i32)], // (player_id, x, y)
-        player_races: &[(u8, u8)],           // (player_id, race)
+        player_races: &[(u8, u8)],          // (player_id, race)
     ) {
-        let race_map: std::collections::HashMap<u8, u8> =
-            player_races.iter().copied().collect();
+        let race_map: std::collections::HashMap<u8, u8> = player_races.iter().copied().collect();
         let map_w = self.map.width_px() as i32;
         let map_h = self.map.height_px() as i32;
 
@@ -325,14 +324,13 @@ impl Game {
 
         // Phase 1: Movement.
         for slot in &mut self.units {
-            if let Some(unit) = slot {
-                if unit.alive {
+            if let Some(unit) = slot
+                && unit.alive {
                     unit.update_movement();
                     if unit.weapon_cooldown > 0 {
                         unit.weapon_cooldown -= 1;
                     }
                 }
-            }
         }
 
         // Phase 2: Combat — resolve attacks.
@@ -342,7 +340,7 @@ impl Game {
         self.update_production();
 
         // Phase 4: Vision — update visibility (every 4 frames for perf).
-        if self.current_frame % 4 == 0 {
+        if self.current_frame.is_multiple_of(4) {
             self.update_vision();
         }
     }
@@ -386,8 +384,8 @@ impl Game {
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
-            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.alive {
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
+                && unit.alive {
                     unit.attack_target = None;
                     unit.move_target = Some((x, y));
                     unit.move_state = MoveState::Moving;
@@ -405,7 +403,6 @@ impl Game {
                     unit.waypoints = waypoints;
                     unit.waypoint_index = 0;
                 }
-            }
         }
     }
 
@@ -413,12 +410,11 @@ impl Game {
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
-            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.alive {
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
+                && unit.alive {
                     unit.attack_target = Some(target_tag);
                     // Movement toward target is handled in update_combat.
                 }
-            }
         }
     }
 
@@ -426,8 +422,8 @@ impl Game {
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
-            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.alive {
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
+                && unit.alive {
                     unit.move_target = None;
                     unit.move_state = MoveState::AtRest;
                     unit.velocity = XY::ZERO;
@@ -436,7 +432,6 @@ impl Game {
                     unit.waypoint_index = 0;
                     unit.attack_target = None;
                 }
-            }
         }
     }
 
@@ -444,13 +439,11 @@ impl Game {
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
-            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.alive && unit.is_building {
-                    if unit.build_queue.len() < 5 {
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
+                && unit.alive && unit.is_building
+                    && unit.build_queue.len() < 5 {
                         unit.build_queue.push(unit_type);
                     }
-                }
-            }
         }
     }
 
@@ -469,9 +462,13 @@ impl Game {
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         if let Some(&tag) = tags.first() {
             let uid = UnitId::from_tag(tag);
-            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.alive {
-                    let flingy = self.data.flingy_for_unit(unit_type).copied().unwrap_or_default();
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
+                && unit.alive {
+                    let flingy = self
+                        .data
+                        .flingy_for_unit(unit_type)
+                        .copied()
+                        .unwrap_or_default();
                     let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
                     unit.unit_type = unit_type;
                     unit.top_speed = flingy.top_speed;
@@ -484,7 +481,6 @@ impl Game {
                     unit.ground_weapon = ut.ground_weapon;
                     unit.air_weapon = ut.air_weapon;
                 }
-            }
         }
     }
 
@@ -508,7 +504,9 @@ impl Game {
 
             if let Some(target_tag) = unit.attack_target {
                 let target_uid = UnitId::from_tag(target_tag);
-                let target_owner = self.units.get(target_uid.index() as usize)
+                let target_owner = self
+                    .units
+                    .get(target_uid.index() as usize)
                     .and_then(|s| s.as_ref())
                     .map(|u| u.owner);
                 if target_owner != Some(unit.owner) {
@@ -523,7 +521,9 @@ impl Game {
             if weapon_id >= 130 {
                 continue; // No weapon.
             }
-            let acq_range = self.data.unit_type(unit.unit_type)
+            let acq_range = self
+                .data
+                .unit_type(unit.unit_type)
                 .map(|ut| ut.sight_range as i32 * 32)
                 .unwrap_or(0);
             if acq_range == 0 {
@@ -532,7 +532,7 @@ impl Game {
 
             let mut best_dist = i64::MAX;
             let mut best_tag: Option<u16> = None;
-            for (j, other_slot) in self.units.iter().enumerate() {
+            for other_slot in self.units.iter() {
                 let Some(other) = other_slot else { continue };
                 if !other.alive || other.owner == unit.owner || other.owner >= 8 {
                     continue;
@@ -558,9 +558,11 @@ impl Game {
             // Get target position and alive status.
             // Note: only check index, not generation — replay tags may have
             // generation mismatches with our simulation.
-            let target_info = self.units.get(ti).and_then(|s| {
-                s.as_ref().filter(|u| u.alive)
-            }).map(|u| (u.pixel_x, u.pixel_y));
+            let target_info = self
+                .units
+                .get(ti)
+                .and_then(|s| s.as_ref().filter(|u| u.alive))
+                .map(|u| (u.pixel_x, u.pixel_y));
 
             let Some((tx, ty)) = target_info else {
                 self.debug_target_not_found += 1;
@@ -667,8 +669,8 @@ impl Game {
     fn update_vision(&mut self) {
         self.vision.clear_visible();
         for slot in &self.units {
-            if let Some(unit) = slot {
-                if unit.alive && unit.owner < 8 {
+            if let Some(unit) = slot
+                && unit.alive && unit.owner < 8 {
                     let sight = self
                         .data
                         .unit_type(unit.unit_type)
@@ -677,7 +679,6 @@ impl Game {
                     self.vision
                         .reveal(unit.pixel_x, unit.pixel_y, sight, unit.owner);
                 }
-            }
         }
     }
 
@@ -734,7 +735,7 @@ mod tests {
             is_building: true,
         };
         let mut unit_types = vec![UnitType::default(); 228];
-        unit_types[0] = marine_ut;     // Marine = unit type 0
+        unit_types[0] = marine_ut; // Marine = unit type 0
         unit_types[122] = barracks_ut; // Barracks = unit type 122
 
         let marine_weapon = WeaponType {
@@ -797,7 +798,10 @@ mod tests {
     #[test]
     fn test_load_initial_units() {
         let mut game = Game::new(test_map(), test_game_data());
-        let units = vec![make_chk_unit(0, 50, 50, 0, 0), make_chk_unit(1, 80, 80, 0, 1)];
+        let units = vec![
+            make_chk_unit(0, 50, 50, 0, 0),
+            make_chk_unit(1, 80, 80, 0, 1),
+        ];
         game.load_initial_units(&units).unwrap();
         assert_eq!(game.unit_count(), 2);
         let u0 = game.unit_by_tag(0).unwrap();
@@ -808,7 +812,8 @@ mod tests {
     #[test]
     fn test_select_and_move() {
         let mut game = Game::new(test_map(), test_game_data());
-        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)]).unwrap();
+        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)])
+            .unwrap();
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Move { x: 100, y: 50 });
         for _ in 0..50 {
@@ -820,7 +825,8 @@ mod tests {
     #[test]
     fn test_select_and_stop() {
         let mut game = Game::new(test_map(), test_game_data());
-        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)]).unwrap();
+        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)])
+            .unwrap();
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Move { x: 200, y: 50 });
         for _ in 0..10 {
@@ -837,7 +843,8 @@ mod tests {
     #[test]
     fn test_unit_arrives() {
         let mut game = Game::new(test_map(), test_game_data());
-        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)]).unwrap();
+        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)])
+            .unwrap();
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Move { x: 70, y: 50 });
         for _ in 0..200 {
@@ -863,7 +870,7 @@ mod tests {
         // Two marines: attacker has extra HP to survive mutual auto-attack.
         game.load_initial_units(&[
             make_chk_unit(0, 50, 50, 0, 0),  // attacker
-            make_chk_unit(1, 100, 50, 0, 1),  // target
+            make_chk_unit(1, 100, 50, 0, 1), // target
         ])
         .unwrap();
         // Give attacker extra HP to survive the mutual combat.
@@ -939,7 +946,8 @@ mod tests {
     fn test_train_produces_unit() {
         let mut game = Game::new(test_map(), test_game_data());
         // A barracks (unit type 122) owned by player 0.
-        game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)]).unwrap();
+        game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)])
+            .unwrap();
         let initial_count = game.unit_count();
 
         // Select barracks, train a marine.
@@ -951,13 +959,18 @@ mod tests {
             game.step();
         }
 
-        assert_eq!(game.unit_count(), initial_count + 1, "should have spawned a marine");
+        assert_eq!(
+            game.unit_count(),
+            initial_count + 1,
+            "should have spawned a marine"
+        );
     }
 
     #[test]
     fn test_train_queue() {
         let mut game = Game::new(test_map(), test_game_data());
-        game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)]).unwrap();
+        game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)])
+            .unwrap();
 
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Train { unit_type: 0 });

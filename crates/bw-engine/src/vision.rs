@@ -85,11 +85,11 @@ impl VisionMap {
         let pi = player as usize;
         let len = self.width as usize * self.height as usize;
         let mut grid = vec![0u8; len];
-        for i in 0..len {
+        for (i, cell) in grid.iter_mut().enumerate() {
             if self.visible[pi][i] {
-                grid[i] = 2;
+                *cell = 2;
             } else if self.explored[pi][i] {
-                grid[i] = 1;
+                *cell = 1;
             }
         }
         grid
@@ -106,9 +106,9 @@ mod tests {
         // Unit at pixel (128, 128) = tile (4, 4), sight range 3 tiles.
         vm.reveal(128, 128, 3, 0);
 
-        assert!(vm.is_visible(0, 4, 4));  // center
-        assert!(vm.is_visible(0, 5, 4));  // 1 tile east
-        assert!(vm.is_visible(0, 7, 4));  // 3 tiles east
+        assert!(vm.is_visible(0, 4, 4)); // center
+        assert!(vm.is_visible(0, 5, 4)); // 1 tile east
+        assert!(vm.is_visible(0, 7, 4)); // 3 tiles east
         assert!(!vm.is_visible(0, 8, 4)); // 4 tiles east (out of range: 4*4=16 > 9)
         assert!(!vm.is_visible(1, 4, 4)); // different player
     }
@@ -131,7 +131,7 @@ mod tests {
         vm.reveal(48, 48, 1, 0);
         let grid = vm.visibility_grid(0);
         assert_eq!(grid.len(), 16);
-        assert_eq!(grid[1 * 4 + 1], 2); // tile (1,1) = visible
-        assert_eq!(grid[0], 0);          // tile (0,0) = fog
+        assert_eq!(grid[4 + 1], 2); // tile (1,1) = visible
+        assert_eq!(grid[0], 0); // tile (0,0) = fog
     }
 }

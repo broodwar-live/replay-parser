@@ -22,11 +22,11 @@ pub struct UnitType {
     pub hitpoints: i32,        // fp8
     pub ground_weapon: u8,     // 130 = none
     pub max_ground_hits: u8,
-    pub air_weapon: u8,        // 130 = none
+    pub air_weapon: u8, // 130 = none
     pub max_air_hits: u8,
     pub armor: u8,
-    pub sight_range: u8,       // in tiles (32px)
-    pub build_time: u16,       // frames
+    pub sight_range: u8, // in tiles (32px)
+    pub build_time: u16, // frames
     pub is_building: bool,
 }
 
@@ -40,7 +40,7 @@ pub struct WeaponType {
     pub damage_bonus: u16,
     pub cooldown: u8,
     pub damage_factor: u8,
-    pub max_range: u32,       // in pixels (not fp8)
+    pub max_range: u32, // in pixels (not fp8)
 }
 
 /// Parsed game data tables.
@@ -68,11 +68,7 @@ impl GameData {
     }
 
     /// Parse with weapon data for combat.
-    pub fn from_dat_full(
-        units_dat: &[u8],
-        flingy_dat: &[u8],
-        weapons_dat: &[u8],
-    ) -> Result<Self> {
+    pub fn from_dat_full(units_dat: &[u8], flingy_dat: &[u8], weapons_dat: &[u8]) -> Result<Self> {
         let flingy_types = parse_flingy_dat(flingy_dat)?;
         let unit_types = parse_units_dat(units_dat)?;
         let weapon_types = parse_weapons_dat(weapons_dat)?;
@@ -94,13 +90,11 @@ impl GameData {
 
         // SC:R's .dat files have speed=1 for many units (reorganized flingy IDs).
         // If the parsed speed looks wrong, use the fallback.
-        if parsed.top_speed <= 1 && !ut.is_building {
-            if let Some(fb) = self.fallback_flingy.get(unit_type as usize) {
-                if fb.top_speed > 1 {
+        if parsed.top_speed <= 1 && !ut.is_building
+            && let Some(fb) = self.fallback_flingy.get(unit_type as usize)
+                && fb.top_speed > 1 {
                     return Some(fb);
                 }
-            }
-        }
         Some(parsed)
     }
 
@@ -127,11 +121,21 @@ fn read_i16_le(data: &[u8], offset: usize) -> i16 {
 }
 
 fn read_i32_le(data: &[u8], offset: usize) -> i32 {
-    i32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]])
+    i32::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ])
 }
 
 fn read_u32_le(data: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]])
+    u32::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ])
 }
 
 // ---------------------------------------------------------------------------
@@ -176,49 +180,49 @@ const U: usize = UNIT_TYPE_COUNT; // 228
 const UNITS_COUNT: usize = 106;
 const BUILDINGS_COUNT: usize = 96;
 
-const U_FLINGY: usize = 0;                                           // 228 x u8
-const U_TURRET: usize = U_FLINGY + U;                                // 228 x u16
-const U_SUBUNIT2: usize = U_TURRET + U * 2;                          // 228 x u16
-const U_INFESTATION: usize = U_SUBUNIT2 + U * 2;                     // 96 x u16
+const U_FLINGY: usize = 0; // 228 x u8
+const U_TURRET: usize = U_FLINGY + U; // 228 x u16
+const U_SUBUNIT2: usize = U_TURRET + U * 2; // 228 x u16
+const U_INFESTATION: usize = U_SUBUNIT2 + U * 2; // 96 x u16
 const U_CONSTRUCTION_ANIM: usize = U_INFESTATION + BUILDINGS_COUNT * 2; // 228 x u32
-const U_UNIT_DIRECTION: usize = U_CONSTRUCTION_ANIM + U * 4;         // 228 x u8
-const U_HAS_SHIELD: usize = U_UNIT_DIRECTION + U;                    // 228 x u8
-const U_SHIELD_POINTS: usize = U_HAS_SHIELD + U;                     // 228 x u16
-const U_HITPOINTS: usize = U_SHIELD_POINTS + U * 2;                  // 228 x i32
-const U_ELEVATION: usize = U_HITPOINTS + U * 4;                      // 228 x u8
-const U_UNKNOWN1: usize = U_ELEVATION + U;                           // 228 x u8
-const U_SUBLABEL: usize = U_UNKNOWN1 + U;                            // 228 x u8
-const U_COMP_AI_IDLE: usize = U_SUBLABEL + U;                        // 228 x u8
-const U_HUMAN_AI_IDLE: usize = U_COMP_AI_IDLE + U;                   // 228 x u8
-const U_RETURN_IDLE: usize = U_HUMAN_AI_IDLE + U;                    // 228 x u8
-const U_ATTACK_UNIT: usize = U_RETURN_IDLE + U;                      // 228 x u8
-const U_ATTACK_MOVE: usize = U_ATTACK_UNIT + U;                      // 228 x u8
-const U_GROUND_WEAPON: usize = U_ATTACK_MOVE + U;                    // 228 x u8
-const U_MAX_GROUND_HITS: usize = U_GROUND_WEAPON + U;                // 228 x u8
-const U_AIR_WEAPON: usize = U_MAX_GROUND_HITS + U;                   // 228 x u8
-const U_MAX_AIR_HITS: usize = U_AIR_WEAPON + U;                      // 228 x u8
-const U_AI_INTERNAL: usize = U_MAX_AIR_HITS + U;                     // 228 x u8
-const U_FLAGS: usize = U_AI_INTERNAL + U;                            // 228 x u32
-const U_TARGET_ACQ_RANGE: usize = U_FLAGS + U * 4;                   // 228 x u8
-const U_SIGHT_RANGE: usize = U_TARGET_ACQ_RANGE + U;                 // 228 x u8
-const U_ARMOR_UPGRADE: usize = U_SIGHT_RANGE + U;                    // 228 x u8
-const U_UNIT_SIZE: usize = U_ARMOR_UPGRADE + U;                      // 228 x u8
-const U_ARMOR: usize = U_UNIT_SIZE + U;                              // 228 x u8
-const U_RIGHT_CLICK: usize = U_ARMOR + U;                            // 228 x u8
-const U_READY_SOUND: usize = U_RIGHT_CLICK + U;                      // 106 x u16
-const U_FIRST_WHAT: usize = U_READY_SOUND + UNITS_COUNT * 2;         // 228 x u16
-const U_LAST_WHAT: usize = U_FIRST_WHAT + U * 2;                     // 228 x u16
-const U_FIRST_PISSED: usize = U_LAST_WHAT + U * 2;                   // 106 x u16
-const U_LAST_PISSED: usize = U_FIRST_PISSED + UNITS_COUNT * 2;       // 106 x u16
-const U_FIRST_YES: usize = U_LAST_PISSED + UNITS_COUNT * 2;          // 106 x u16
-const U_LAST_YES: usize = U_FIRST_YES + UNITS_COUNT * 2;             // 106 x u16
-const U_PLACEMENT_SIZE: usize = U_LAST_YES + UNITS_COUNT * 2;        // 228 x i16*2
-const U_ADDON_POS: usize = U_PLACEMENT_SIZE + U * 4;                 // 96 x i16*2
-const U_DIMENSIONS: usize = U_ADDON_POS + BUILDINGS_COUNT * 4;       // 228 x i16*4
-const U_PORTRAIT: usize = U_DIMENSIONS + U * 8;                      // 228 x u16
-const U_MINERAL_COST: usize = U_PORTRAIT + U * 2;                    // 228 x u16
-const U_GAS_COST: usize = U_MINERAL_COST + U * 2;                    // 228 x u16
-const U_BUILD_TIME: usize = U_GAS_COST + U * 2;                      // 228 x u16
+const U_UNIT_DIRECTION: usize = U_CONSTRUCTION_ANIM + U * 4; // 228 x u8
+const U_HAS_SHIELD: usize = U_UNIT_DIRECTION + U; // 228 x u8
+const U_SHIELD_POINTS: usize = U_HAS_SHIELD + U; // 228 x u16
+const U_HITPOINTS: usize = U_SHIELD_POINTS + U * 2; // 228 x i32
+const U_ELEVATION: usize = U_HITPOINTS + U * 4; // 228 x u8
+const U_UNKNOWN1: usize = U_ELEVATION + U; // 228 x u8
+const U_SUBLABEL: usize = U_UNKNOWN1 + U; // 228 x u8
+const U_COMP_AI_IDLE: usize = U_SUBLABEL + U; // 228 x u8
+const U_HUMAN_AI_IDLE: usize = U_COMP_AI_IDLE + U; // 228 x u8
+const U_RETURN_IDLE: usize = U_HUMAN_AI_IDLE + U; // 228 x u8
+const U_ATTACK_UNIT: usize = U_RETURN_IDLE + U; // 228 x u8
+const U_ATTACK_MOVE: usize = U_ATTACK_UNIT + U; // 228 x u8
+const U_GROUND_WEAPON: usize = U_ATTACK_MOVE + U; // 228 x u8
+const U_MAX_GROUND_HITS: usize = U_GROUND_WEAPON + U; // 228 x u8
+const U_AIR_WEAPON: usize = U_MAX_GROUND_HITS + U; // 228 x u8
+const U_MAX_AIR_HITS: usize = U_AIR_WEAPON + U; // 228 x u8
+const U_AI_INTERNAL: usize = U_MAX_AIR_HITS + U; // 228 x u8
+const U_FLAGS: usize = U_AI_INTERNAL + U; // 228 x u32
+const U_TARGET_ACQ_RANGE: usize = U_FLAGS + U * 4; // 228 x u8
+const U_SIGHT_RANGE: usize = U_TARGET_ACQ_RANGE + U; // 228 x u8
+const U_ARMOR_UPGRADE: usize = U_SIGHT_RANGE + U; // 228 x u8
+const U_UNIT_SIZE: usize = U_ARMOR_UPGRADE + U; // 228 x u8
+const U_ARMOR: usize = U_UNIT_SIZE + U; // 228 x u8
+const U_RIGHT_CLICK: usize = U_ARMOR + U; // 228 x u8
+const U_READY_SOUND: usize = U_RIGHT_CLICK + U; // 106 x u16
+const U_FIRST_WHAT: usize = U_READY_SOUND + UNITS_COUNT * 2; // 228 x u16
+const U_LAST_WHAT: usize = U_FIRST_WHAT + U * 2; // 228 x u16
+const U_FIRST_PISSED: usize = U_LAST_WHAT + U * 2; // 106 x u16
+const U_LAST_PISSED: usize = U_FIRST_PISSED + UNITS_COUNT * 2; // 106 x u16
+const U_FIRST_YES: usize = U_LAST_PISSED + UNITS_COUNT * 2; // 106 x u16
+const U_LAST_YES: usize = U_FIRST_YES + UNITS_COUNT * 2; // 106 x u16
+const U_PLACEMENT_SIZE: usize = U_LAST_YES + UNITS_COUNT * 2; // 228 x i16*2
+const U_ADDON_POS: usize = U_PLACEMENT_SIZE + U * 4; // 96 x i16*2
+const U_DIMENSIONS: usize = U_ADDON_POS + BUILDINGS_COUNT * 4; // 228 x i16*4
+const U_PORTRAIT: usize = U_DIMENSIONS + U * 8; // 228 x u16
+const U_MINERAL_COST: usize = U_PORTRAIT + U * 2; // 228 x u16
+const U_GAS_COST: usize = U_MINERAL_COST + U * 2; // 228 x u16
+const U_BUILD_TIME: usize = U_GAS_COST + U * 2; // 228 x u16
 
 /// Minimum units.dat size to read all fields we need (through build_time).
 const UNITS_DAT_MIN_SIZE: usize = U_BUILD_TIME + U * 2;
@@ -242,23 +246,33 @@ fn parse_units_dat(data: &[u8]) -> Result<Vec<UnitType>> {
     for i in 0..U {
         let flingy_id = data[U_FLINGY + i];
 
-        let (turret_unit_type, hitpoints, ground_weapon, max_ground_hits, air_weapon, max_air_hits, armor, sight_range, build_time, is_building) =
-            if has_full {
-                (
-                    read_u16_le(data, U_TURRET + i * 2),
-                    read_i32_le(data, U_HITPOINTS + i * 4),
-                    data[U_GROUND_WEAPON + i],
-                    data[U_MAX_GROUND_HITS + i],
-                    data[U_AIR_WEAPON + i],
-                    data[U_MAX_AIR_HITS + i],
-                    data[U_ARMOR + i],
-                    data[U_SIGHT_RANGE + i],
-                    read_u16_le(data, U_BUILD_TIME + i * 2),
-                    read_u32_le(data, U_FLAGS + i * 4) & FLAG_BUILDING != 0,
-                )
-            } else {
-                (228, 0, 130, 0, 130, 0, 0, 7, 0, false)
-            };
+        let (
+            turret_unit_type,
+            hitpoints,
+            ground_weapon,
+            max_ground_hits,
+            air_weapon,
+            max_air_hits,
+            armor,
+            sight_range,
+            build_time,
+            is_building,
+        ) = if has_full {
+            (
+                read_u16_le(data, U_TURRET + i * 2),
+                read_i32_le(data, U_HITPOINTS + i * 4),
+                data[U_GROUND_WEAPON + i],
+                data[U_MAX_GROUND_HITS + i],
+                data[U_AIR_WEAPON + i],
+                data[U_MAX_AIR_HITS + i],
+                data[U_ARMOR + i],
+                data[U_SIGHT_RANGE + i],
+                read_u16_le(data, U_BUILD_TIME + i * 2),
+                read_u32_le(data, U_FLAGS + i * 4) & FLAG_BUILDING != 0,
+            )
+        } else {
+            (228, 0, 130, 0, 130, 0, 0, 7, 0, false)
+        };
 
         types.push(UnitType {
             flingy_id,
@@ -284,24 +298,24 @@ fn parse_units_dat(data: &[u8]) -> Result<Vec<UnitType>> {
 
 const W: usize = WEAPON_COUNT;
 
-const W_LABEL: usize = 0;                                 // 130 x u16
-const W_FLINGY: usize = W_LABEL + W * 2;                  // 130 x u32
-const W_UNUSED: usize = W_FLINGY + W * 4;                 // 130 x u8
-const W_TARGET_FLAGS: usize = W_UNUSED + W;                // 130 x u16
-const W_MIN_RANGE: usize = W_TARGET_FLAGS + W * 2;         // 130 x u32
-const W_MAX_RANGE: usize = W_MIN_RANGE + W * 4;            // 130 x u32
-const W_DAMAGE_UPGRADE: usize = W_MAX_RANGE + W * 4;       // 130 x u8
-const W_DAMAGE_TYPE: usize = W_DAMAGE_UPGRADE + W;         // 130 x u8
-const W_BULLET_TYPE: usize = W_DAMAGE_TYPE + W;            // 130 x u8
-const W_LIFETIME: usize = W_BULLET_TYPE + W;               // 130 x u8
-const W_HIT_TYPE: usize = W_LIFETIME + W;                  // 130 x u8
-const W_INNER_SPLASH: usize = W_HIT_TYPE + W;              // 130 x u16
-const W_MEDIUM_SPLASH: usize = W_INNER_SPLASH + W * 2;     // 130 x u16
-const W_OUTER_SPLASH: usize = W_MEDIUM_SPLASH + W * 2;     // 130 x u16
-const W_DAMAGE_AMOUNT: usize = W_OUTER_SPLASH + W * 2;     // 130 x u16
-const W_DAMAGE_BONUS: usize = W_DAMAGE_AMOUNT + W * 2;     // 130 x u16
-const W_COOLDOWN: usize = W_DAMAGE_BONUS + W * 2;          // 130 x u8
-const W_BULLET_COUNT: usize = W_COOLDOWN + W;              // 130 x u8
+const W_LABEL: usize = 0; // 130 x u16
+const W_FLINGY: usize = W_LABEL + W * 2; // 130 x u32
+const W_UNUSED: usize = W_FLINGY + W * 4; // 130 x u8
+const W_TARGET_FLAGS: usize = W_UNUSED + W; // 130 x u16
+const W_MIN_RANGE: usize = W_TARGET_FLAGS + W * 2; // 130 x u32
+const W_MAX_RANGE: usize = W_MIN_RANGE + W * 4; // 130 x u32
+const W_DAMAGE_UPGRADE: usize = W_MAX_RANGE + W * 4; // 130 x u8
+const W_DAMAGE_TYPE: usize = W_DAMAGE_UPGRADE + W; // 130 x u8
+const W_BULLET_TYPE: usize = W_DAMAGE_TYPE + W; // 130 x u8
+const W_LIFETIME: usize = W_BULLET_TYPE + W; // 130 x u8
+const W_HIT_TYPE: usize = W_LIFETIME + W; // 130 x u8
+const W_INNER_SPLASH: usize = W_HIT_TYPE + W; // 130 x u16
+const W_MEDIUM_SPLASH: usize = W_INNER_SPLASH + W * 2; // 130 x u16
+const W_OUTER_SPLASH: usize = W_MEDIUM_SPLASH + W * 2; // 130 x u16
+const W_DAMAGE_AMOUNT: usize = W_OUTER_SPLASH + W * 2; // 130 x u16
+const W_DAMAGE_BONUS: usize = W_DAMAGE_AMOUNT + W * 2; // 130 x u16
+const W_COOLDOWN: usize = W_DAMAGE_BONUS + W * 2; // 130 x u8
+const W_BULLET_COUNT: usize = W_COOLDOWN + W; // 130 x u8
 
 const WEAPONS_DAT_MIN_SIZE: usize = W_BULLET_COUNT + W;
 
@@ -336,51 +350,51 @@ fn build_fallback_flingy() -> Vec<FlingyType> {
     // (unit_type, top_speed, acceleration, halt_distance, turn_rate, movement_type)
     let entries: &[(usize, i32, i16, i32, u8, u8)] = &[
         // Terran
-        (0, 1024, 17, 1, 40, 0),       // Marine
-        (1, 1024, 17, 1, 40, 0),        // Ghost
-        (2, 1707, 100, 40960, 40, 0),   // Vulture
-        (3, 853, 17, 1, 20, 0),         // Goliath
-        (5, 853, 17, 1, 20, 0),         // Siege Tank (Tank)
-        (7, 1280, 67, 30720, 40, 0),    // SCV
-        (8, 1707, 67, 40960, 40, 2),    // Wraith
-        (9, 1280, 50, 40960, 40, 2),    // Science Vessel
-        (11, 1400, 17, 40960, 40, 2),   // Dropship
-        (12, 640, 27, 40960, 20, 2),    // Battlecruiser
-        (30, 853, 17, 1, 20, 0),        // Siege Tank (Siege)
-        (32, 1024, 17, 1, 40, 0),       // Firebat
-        (34, 1024, 17, 1, 40, 0),       // Medic
-        (58, 1707, 67, 40960, 40, 2),   // Valkyrie
+        (0, 1024, 17, 1, 40, 0),      // Marine
+        (1, 1024, 17, 1, 40, 0),      // Ghost
+        (2, 1707, 100, 40960, 40, 0), // Vulture
+        (3, 853, 17, 1, 20, 0),       // Goliath
+        (5, 853, 17, 1, 20, 0),       // Siege Tank (Tank)
+        (7, 1280, 67, 30720, 40, 0),  // SCV
+        (8, 1707, 67, 40960, 40, 2),  // Wraith
+        (9, 1280, 50, 40960, 40, 2),  // Science Vessel
+        (11, 1400, 17, 40960, 40, 2), // Dropship
+        (12, 640, 27, 40960, 20, 2),  // Battlecruiser
+        (30, 853, 17, 1, 20, 0),      // Siege Tank (Siege)
+        (32, 1024, 17, 1, 40, 0),     // Firebat
+        (34, 1024, 17, 1, 40, 0),     // Medic
+        (58, 1707, 67, 40960, 40, 2), // Valkyrie
         // Zerg
-        (35, 1, 1, 1, 1, 0),            // Larva
-        (37, 1397, 67, 20480, 27, 0),   // Zergling
-        (38, 1024, 17, 1, 27, 0),       // Hydralisk
-        (39, 1397, 67, 20480, 40, 0),   // Ultralisk
-        (41, 1280, 67, 30720, 40, 0),   // Drone
-        (42, 1067, 17, 40960, 40, 2),   // Overlord (before speed upgrade)
-        (43, 1707, 67, 40960, 40, 2),   // Mutalisk
-        (44, 640, 27, 40960, 20, 2),    // Guardian
-        (45, 1280, 50, 40960, 40, 2),   // Queen
-        (46, 853, 27, 1, 27, 0),        // Defiler
-        (47, 2133, 67, 1, 40, 2),       // Scourge
-        (50, 1024, 17, 1, 40, 0),       // Infested Terran
-        (62, 853, 27, 40960, 27, 2),    // Devourer
-        (103, 1024, 17, 1, 40, 0),      // Lurker
+        (35, 1, 1, 1, 1, 0),          // Larva
+        (37, 1397, 67, 20480, 27, 0), // Zergling
+        (38, 1024, 17, 1, 27, 0),     // Hydralisk
+        (39, 1397, 67, 20480, 40, 0), // Ultralisk
+        (41, 1280, 67, 30720, 40, 0), // Drone
+        (42, 1067, 17, 40960, 40, 2), // Overlord (before speed upgrade)
+        (43, 1707, 67, 40960, 40, 2), // Mutalisk
+        (44, 640, 27, 40960, 20, 2),  // Guardian
+        (45, 1280, 50, 40960, 40, 2), // Queen
+        (46, 853, 27, 1, 27, 0),      // Defiler
+        (47, 2133, 67, 1, 40, 2),     // Scourge
+        (50, 1024, 17, 1, 40, 0),     // Infested Terran
+        (62, 853, 27, 40960, 27, 2),  // Devourer
+        (103, 1024, 17, 1, 40, 0),    // Lurker
         // Protoss
-        (60, 1707, 67, 40960, 40, 2),   // Corsair
-        (61, 1024, 17, 1, 40, 0),       // Dark Templar
-        (63, 853, 27, 1, 40, 2),        // Dark Archon
-        (64, 1280, 67, 30720, 40, 0),   // Probe
-        (65, 608, 17, 1, 40, 0),        // Zealot
-        (66, 853, 27, 20480, 40, 0),    // Dragoon
-        (67, 608, 17, 1, 40, 0),        // High Templar
-        (68, 1024, 17, 1, 40, 2),       // Archon
-        (69, 1400, 17, 40960, 40, 2),   // Shuttle
-        (70, 1280, 67, 40960, 40, 2),   // Scout
-        (71, 853, 27, 40960, 40, 2),    // Arbiter
-        (72, 640, 27, 40960, 20, 2),    // Carrier
-        (73, 2560, 133, 1, 40, 2),      // Interceptor
-        (83, 427, 17, 1, 20, 0),        // Reaver
-        (84, 1280, 17, 40960, 40, 2),   // Observer
+        (60, 1707, 67, 40960, 40, 2), // Corsair
+        (61, 1024, 17, 1, 40, 0),     // Dark Templar
+        (63, 853, 27, 1, 40, 2),      // Dark Archon
+        (64, 1280, 67, 30720, 40, 0), // Probe
+        (65, 608, 17, 1, 40, 0),      // Zealot
+        (66, 853, 27, 20480, 40, 0),  // Dragoon
+        (67, 608, 17, 1, 40, 0),      // High Templar
+        (68, 1024, 17, 1, 40, 2),     // Archon
+        (69, 1400, 17, 40960, 40, 2), // Shuttle
+        (70, 1280, 67, 40960, 40, 2), // Scout
+        (71, 853, 27, 40960, 40, 2),  // Arbiter
+        (72, 640, 27, 40960, 20, 2),  // Carrier
+        (73, 2560, 133, 1, 40, 2),    // Interceptor
+        (83, 427, 17, 1, 20, 0),      // Reaver
+        (84, 1280, 17, 40960, 40, 2), // Observer
     ];
 
     for &(uid, speed, accel, halt, turn, mt) in entries {
@@ -422,9 +436,9 @@ mod tests {
         data[U_FLINGY] = 0;
         let hp: i32 = 40 * 256;
         data[U_HITPOINTS..U_HITPOINTS + 4].copy_from_slice(&hp.to_le_bytes());
-        data[U_GROUND_WEAPON] = 0;      // weapon 0
+        data[U_GROUND_WEAPON] = 0; // weapon 0
         data[U_MAX_GROUND_HITS] = 1;
-        data[U_AIR_WEAPON] = 130;        // no air weapon
+        data[U_AIR_WEAPON] = 130; // no air weapon
         data[U_MAX_AIR_HITS] = 0;
         data[U_ARMOR] = 0;
         let bt: u16 = 360; // ~15 seconds at fastest
@@ -456,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_parse_flingy_dat_too_short() {
-        assert!(parse_flingy_dat(&vec![0u8; 100]).is_err());
+        assert!(parse_flingy_dat(&[0u8; 100]).is_err());
     }
 
     #[test]

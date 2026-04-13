@@ -22,7 +22,7 @@ fn fixture(name: &str) -> Vec<u8> {
 /// Build minimal game data with reasonable defaults for all 228 unit types.
 fn synthetic_game_data() -> GameData {
     let default_flingy = FlingyType {
-        top_speed: 4 * 256,  // ~4 px/frame
+        top_speed: 4 * 256, // ~4 px/frame
         acceleration: 256,
         halt_distance: 0,
         turn_rate: 40,
@@ -52,8 +52,8 @@ fn synthetic_game_data() -> GameData {
 
     let mut unit_types = vec![default_unit; 228];
     // Mark buildings (roughly unit types 106-202 in BW).
-    for i in 106..=202 {
-        unit_types[i] = building_unit;
+    for ut in &mut unit_types[106..=202] {
+        *ut = building_unit;
     }
 
     let default_weapon = WeaponType {
@@ -113,9 +113,7 @@ fn translate(cmd: &replay_core::command::Command) -> Option<EngineCommand> {
     match cmd {
         Command::Select { unit_tags } => Some(EngineCommand::Select(unit_tags.clone())),
         Command::SelectAdd { unit_tags } => Some(EngineCommand::SelectAdd(unit_tags.clone())),
-        Command::SelectRemove { unit_tags } => {
-            Some(EngineCommand::SelectRemove(unit_tags.clone()))
-        }
+        Command::SelectRemove { unit_tags } => Some(EngineCommand::SelectRemove(unit_tags.clone())),
         Command::Hotkey { action, group } => match action {
             HotkeyAction::Assign => Some(EngineCommand::HotkeyAssign { group: *group }),
             HotkeyAction::Select => Some(EngineCommand::HotkeyRecall { group: *group }),
@@ -132,7 +130,11 @@ fn translate(cmd: &replay_core::command::Command) -> Option<EngineCommand> {
             }
         }
         Command::TargetedOrder {
-            x, y, order, target_tag, ..
+            x,
+            y,
+            order,
+            target_tag,
+            ..
         } => {
             if *order == 0x06 {
                 Some(EngineCommand::Move { x: *x, y: *y })
@@ -148,7 +150,9 @@ fn translate(cmd: &replay_core::command::Command) -> Option<EngineCommand> {
         Command::Train { unit_type } => Some(EngineCommand::Train {
             unit_type: *unit_type,
         }),
-        Command::Build { x, y, unit_type, .. } => Some(EngineCommand::Build {
+        Command::Build {
+            x, y, unit_type, ..
+        } => Some(EngineCommand::Build {
             x: *x,
             y: *y,
             unit_type: *unit_type,
@@ -235,12 +239,11 @@ fn run_sim(replay_name: &str) -> SimResult {
         // Apply commands for this frame.
         while cmd_idx < replay.commands.len() && replay.commands[cmd_idx].frame <= target_frame {
             let gc = &replay.commands[cmd_idx];
-            if gc.frame == target_frame {
-                if let Some(cmd) = translate(&gc.command) {
+            if gc.frame == target_frame
+                && let Some(cmd) = translate(&gc.command) {
                     game.apply_command(gc.player_id, &cmd);
                     translated += 1;
                 }
-            }
             cmd_idx += 1;
         }
         game.step();
@@ -391,12 +394,18 @@ fn test_chk_unit_extraction() {
 
         let sections = chk::parse_sections(&replay.map_data).unwrap();
         let terrain = chk::extract_terrain(&sections).unwrap();
-        assert!(terrain.width > 0 && terrain.height > 0, "{name}: invalid map dimensions");
+        assert!(
+            terrain.width > 0 && terrain.height > 0,
+            "{name}: invalid map dimensions"
+        );
 
         let units = chk_units::parse_chk_units(&sections).unwrap();
         println!(
             "{name}: map {}x{}, tileset {}, {} CHK units",
-            terrain.width, terrain.height, terrain.tileset_index, units.len()
+            terrain.width,
+            terrain.height,
+            terrain.tileset_index,
+            units.len()
         );
         assert!(!units.is_empty(), "{name}: should have preplaced units");
 

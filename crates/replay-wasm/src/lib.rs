@@ -139,16 +139,15 @@ impl GameSim {
         let mut game = bw_engine::Game::new(map, data);
 
         // Load initial units from CHK UNIT section.
-        let sections = bw_engine::chk::parse_sections(chk_data)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+        let sections =
+            bw_engine::chk::parse_sections(chk_data).map_err(|e| JsError::new(&e.to_string()))?;
         let chk_units = bw_engine::chk_units::parse_chk_units(&sections)
             .map_err(|e| JsError::new(&e.to_string()))?;
         game.load_initial_units(&chk_units)
             .map_err(|e| JsError::new(&e.to_string()))?;
 
         // Parse replay for commands.
-        let replay = replay_core::parse(replay_data)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+        let replay = replay_core::parse(replay_data).map_err(|e| JsError::new(&e.to_string()))?;
 
         Ok(Self {
             inner: game,
@@ -166,11 +165,10 @@ impl GameSim {
             && self.commands[self.command_cursor].frame <= next_frame
         {
             let gc = &self.commands[self.command_cursor];
-            if gc.frame == next_frame {
-                if let Some(cmd) = translate_command(&gc.command) {
+            if gc.frame == next_frame
+                && let Some(cmd) = translate_command(&gc.command) {
                     self.inner.apply_command(gc.player_id, &cmd);
                 }
-            }
             self.command_cursor += 1;
         }
 
@@ -266,7 +264,11 @@ fn translate_command(cmd: &replay_core::command::Command) -> Option<bw_engine::E
             }
         }
         Command::TargetedOrder {
-            x, y, order, target_tag, ..
+            x,
+            y,
+            order,
+            target_tag,
+            ..
         } => {
             if *order == 0x06 {
                 // Move order.
@@ -284,7 +286,9 @@ fn translate_command(cmd: &replay_core::command::Command) -> Option<bw_engine::E
         Command::Train { unit_type } => Some(bw_engine::EngineCommand::Train {
             unit_type: *unit_type,
         }),
-        Command::Build { x, y, unit_type, .. } => Some(bw_engine::EngineCommand::Build {
+        Command::Build {
+            x, y, unit_type, ..
+        } => Some(bw_engine::EngineCommand::Build {
             x: *x,
             y: *y,
             unit_type: *unit_type,

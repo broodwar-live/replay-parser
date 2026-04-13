@@ -160,8 +160,12 @@ impl RegionMap {
                 let idx = ty * w + tx;
                 let ri = self.tile_region[idx] as usize;
 
-                for (nx, ny) in [(tx.wrapping_sub(1), ty), (tx + 1, ty), (tx, ty.wrapping_sub(1)), (tx, ty + 1)]
-                {
+                for (nx, ny) in [
+                    (tx.wrapping_sub(1), ty),
+                    (tx + 1, ty),
+                    (tx, ty.wrapping_sub(1)),
+                    (tx, ty + 1),
+                ] {
                     if nx >= w || ny >= h {
                         continue;
                     }
@@ -324,13 +328,18 @@ mod tests {
         let w = 6u16;
         let h = 4u16;
         let mut mask = vec![true; (w * h) as usize];
-        mask[(1 * w + 3) as usize] = false;
+        mask[(w + 3) as usize] = false;
         mask[(2 * w + 3) as usize] = false;
         let map = build_map_with_mask(w, h, &mask);
         let rm = RegionMap::from_map(&map);
 
         // Should still be 1 walkable group (connected via top and bottom rows)
-        let walkable_groups: Vec<_> = rm.regions.iter().filter(|r| r.walkable).map(|r| r.group).collect();
+        let walkable_groups: Vec<_> = rm
+            .regions
+            .iter()
+            .filter(|r| r.walkable)
+            .map(|r| r.group)
+            .collect();
         let first = walkable_groups[0];
         assert!(walkable_groups.iter().all(|&g| g == first));
     }

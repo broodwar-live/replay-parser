@@ -133,13 +133,12 @@ fn find_tile_path(
 
             // For diagonal moves, both adjacent cardinal tiles must be passable
             // (prevents cutting through diagonal wall corners).
-            if ddx != 0 && ddy != 0 {
-                if !map.is_tile_passable((cx + ddx) as u16, cy as u16)
-                    || !map.is_tile_passable(cx as u16, (cy + ddy) as u16)
+            if ddx != 0 && ddy != 0
+                && (!map.is_tile_passable((cx + ddx) as u16, cy as u16)
+                    || !map.is_tile_passable(cx as u16, (cy + ddy) as u16))
                 {
                     continue;
                 }
-            }
 
             let ni = idx(nx, ny);
             if closed[ni] {
@@ -164,6 +163,7 @@ fn find_tile_path(
 
 /// Reconstruct tile path and convert to pixel waypoints.
 /// Simplifies the path by removing collinear waypoints.
+#[allow(clippy::too_many_arguments)]
 fn reconstruct_tile_path(
     came_from: &[u32],
     goal: usize,
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_same_tile_direct() {
-        let map = build_map_with_mask(4, 4, &vec![true; 16]);
+        let map = build_map_with_mask(4, 4, &[true; 16]);
         let rm = RegionMap::from_map(&map);
         let path = find_path(&map, &rm, 20, 20, 30, 30).unwrap();
         assert_eq!(path, vec![(30, 30)]);
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_straight_line() {
-        let map = build_map_with_mask(8, 4, &vec![true; 32]);
+        let map = build_map_with_mask(8, 4, &[true; 32]);
         let rm = RegionMap::from_map(&map);
         let path = find_path(&map, &rm, 16, 48, 208, 48).unwrap();
         // Should be a relatively direct path.
@@ -473,7 +473,7 @@ mod tests {
         let w = 8u16;
         let h = 6u16;
         let mut mask = vec![true; (w * h) as usize];
-        mask[(1 * w + 4) as usize] = false;
+        mask[(w + 4) as usize] = false;
         mask[(2 * w + 4) as usize] = false;
         mask[(3 * w + 4) as usize] = false;
 
@@ -496,7 +496,7 @@ mod tests {
         let wall_x_max = 5 * 32;
         for &(wx, wy) in &waypoints {
             let in_wall_col = wx >= wall_x_min && wx < wall_x_max;
-            let in_wall_rows = wy >= 1 * 32 && wy < 4 * 32;
+            let in_wall_rows = (32..4 * 32).contains(&wy);
             assert!(
                 !(in_wall_col && in_wall_rows),
                 "waypoint ({}, {}) is inside the wall",
@@ -526,12 +526,15 @@ mod tests {
         let rm = RegionMap::from_map(&map);
 
         let path = find_path(&map, &rm, 16, 16, 80, 80);
-        assert!(path.is_none(), "should not be able to cut through diagonal walls");
+        assert!(
+            path.is_none(),
+            "should not be able to cut through diagonal walls"
+        );
     }
 
     #[test]
     fn test_out_of_bounds() {
-        let map = build_map_with_mask(4, 4, &vec![true; 16]);
+        let map = build_map_with_mask(4, 4, &[true; 16]);
         let rm = RegionMap::from_map(&map);
         assert!(find_path(&map, &rm, -10, -10, 16, 16).is_none());
     }

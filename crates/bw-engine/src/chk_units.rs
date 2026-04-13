@@ -121,13 +121,7 @@ mod tests {
     use super::*;
     use crate::chk;
 
-    fn build_unit_entry(
-        instance_id: u32,
-        x: u16,
-        y: u16,
-        unit_type: u16,
-        owner: u8,
-    ) -> Vec<u8> {
+    fn build_unit_entry(instance_id: u32, x: u16, y: u16, unit_type: u16, owner: u8) -> Vec<u8> {
         let mut entry = vec![0u8; UNIT_ENTRY_SIZE];
         entry[0..4].copy_from_slice(&instance_id.to_le_bytes());
         entry[4..6].copy_from_slice(&x.to_le_bytes());
@@ -155,8 +149,8 @@ mod tests {
     #[test]
     fn test_parse_chk_units() {
         let entries = vec![
-            build_unit_entry(0, 100, 200, 0, 0),  // Marine, player 0
-            build_unit_entry(1, 300, 400, 7, 1),   // SCV, player 1
+            build_unit_entry(0, 100, 200, 0, 0), // Marine, player 0
+            build_unit_entry(1, 300, 400, 7, 1), // SCV, player 1
         ];
         let chk = build_chk_with_units(&entries);
         let sections = chk::parse_sections(&chk).unwrap();
@@ -176,7 +170,7 @@ mod tests {
     fn test_skip_invalid_unit_type() {
         let entries = vec![
             build_unit_entry(0, 100, 200, 0xFFFF, 0), // Invalid
-            build_unit_entry(1, 300, 400, 0, 0),       // Valid
+            build_unit_entry(1, 300, 400, 0, 0),      // Valid
         ];
         let chk = build_chk_with_units(&entries);
         let sections = chk::parse_sections(&chk).unwrap();

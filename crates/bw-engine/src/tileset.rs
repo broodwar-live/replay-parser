@@ -105,22 +105,18 @@ impl TilesetData {
     /// Get the 4x4 mini-tile flags for a megatile.
     pub(crate) fn mini_tile_flags(&self, megatile_idx: u16) -> Result<&[u16; 16]> {
         let idx = megatile_idx as usize;
-        self.vf4
-            .get(idx)
-            .map(|e| &e.mini_tile_flags)
-            .ok_or(EngineError::MegatileLookupOutOfBounds {
+        self.vf4.get(idx).map(|e| &e.mini_tile_flags).ok_or(
+            EngineError::MegatileLookupOutOfBounds {
                 index: idx,
                 vf4_len: self.vf4.len(),
-            })
+            },
+        )
     }
 
     /// Get the CV5 flags for a tile group.
     pub(crate) fn cv5_flags(&self, tile_id: u16) -> u16 {
         let group_index = ((tile_id >> 4) & 0x7FF) as usize;
-        self.cv5
-            .get(group_index)
-            .map(|e| e.flags)
-            .unwrap_or(0)
+        self.cv5.get(group_index).map(|e| e.flags).unwrap_or(0)
     }
 }
 
@@ -129,7 +125,7 @@ fn read_u16_le(data: &[u8], offset: usize) -> u16 {
 }
 
 fn parse_cv5(data: &[u8]) -> Result<Vec<Cv5Entry>> {
-    if data.len() % CV5_ENTRY_SIZE != 0 {
+    if !data.len().is_multiple_of(CV5_ENTRY_SIZE) {
         return Err(EngineError::TilesetDataTooShort {
             file: "cv5",
             expected: CV5_ENTRY_SIZE,
@@ -148,8 +144,8 @@ fn parse_cv5(data: &[u8]) -> Result<Vec<Cv5Entry>> {
         // bytes 4-19: skipped (4x u16 misc fields)
         // bytes 20-51: 16x u16 mega_tile_indices
         let mut mega_tile_indices = [0u16; 16];
-        for j in 0..16 {
-            mega_tile_indices[j] = read_u16_le(data, base + 20 + j * 2);
+        for (j, slot) in mega_tile_indices.iter_mut().enumerate() {
+            *slot = read_u16_le(data, base + 20 + j * 2);
         }
         entries.push(Cv5Entry {
             flags,
@@ -161,7 +157,7 @@ fn parse_cv5(data: &[u8]) -> Result<Vec<Cv5Entry>> {
 }
 
 fn parse_vf4(data: &[u8]) -> Result<Vec<Vf4Entry>> {
-    if data.len() % VF4_ENTRY_SIZE != 0 {
+    if !data.len().is_multiple_of(VF4_ENTRY_SIZE) {
         return Err(EngineError::TilesetDataTooShort {
             file: "vf4",
             expected: VF4_ENTRY_SIZE,
@@ -175,8 +171,8 @@ fn parse_vf4(data: &[u8]) -> Result<Vec<Vf4Entry>> {
     for i in 0..count {
         let base = i * VF4_ENTRY_SIZE;
         let mut mini_tile_flags = [0u16; 16];
-        for j in 0..16 {
-            mini_tile_flags[j] = read_u16_le(data, base + j * 2);
+        for (j, slot) in mini_tile_flags.iter_mut().enumerate() {
+            *slot = read_u16_le(data, base + j * 2);
         }
         entries.push(Vf4Entry { mini_tile_flags });
     }
@@ -230,7 +226,9 @@ mod tests {
 
     #[test]
     fn test_parse_cv5_single_entry() {
-        let indices: [u16; 16] = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+        let indices: [u16; 16] = [
+            10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        ];
         let data = build_cv5_entry(0x00FF, &indices);
         let entries = parse_cv5(&data).unwrap();
         assert_eq!(entries.len(), 1);
@@ -279,7 +277,7 @@ mod tests {
         let ts = TilesetData::from_bytes(&cv5_data, &vf4_data).unwrap();
 
         // group_index=1 is out of bounds -> None
-        let tile_id = (1u16 << 4) | 0;
+        let tile_id = 1u16 << 4 ;
         assert_eq!(ts.megatile_index(tile_id), None);
     }
 

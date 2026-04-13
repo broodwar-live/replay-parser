@@ -183,8 +183,9 @@ impl Game {
                     unit.move_target = Some((x, y));
                     unit.move_state = MoveState::Moving;
 
-                    // Compute path using region-based A*.
+                    // Compute path using tile-level A* (falls back to region A*).
                     let waypoints = pathfind::find_path(
+                        &self.map,
                         &self.region_map,
                         unit.pixel_x,
                         unit.pixel_y,

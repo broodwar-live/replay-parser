@@ -277,7 +277,7 @@ mod tests {
         let ts = TilesetData::from_bytes(&cv5_data, &vf4_data).unwrap();
 
         // group_index=1 is out of bounds -> None
-        let tile_id = 1u16 << 4 ;
+        let tile_id = 1u16 << 4;
         assert_eq!(ts.megatile_index(tile_id), None);
     }
 

@@ -238,10 +238,11 @@ fn run_full_sim(replay_name: &str) {
         while cmd_idx < replay.commands.len() && replay.commands[cmd_idx].frame <= frame {
             let gc = &replay.commands[cmd_idx];
             if gc.frame == frame
-                && let Some(cmd) = translate(&gc.command) {
-                    game.apply_command(gc.player_id, &cmd);
-                    translated += 1;
-                }
+                && let Some(cmd) = translate(&gc.command)
+            {
+                game.apply_command(gc.player_id, &cmd);
+                translated += 1;
+            }
             cmd_idx += 1;
         }
 

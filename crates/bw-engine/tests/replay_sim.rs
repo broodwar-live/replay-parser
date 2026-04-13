@@ -240,10 +240,11 @@ fn run_sim(replay_name: &str) -> SimResult {
         while cmd_idx < replay.commands.len() && replay.commands[cmd_idx].frame <= target_frame {
             let gc = &replay.commands[cmd_idx];
             if gc.frame == target_frame
-                && let Some(cmd) = translate(&gc.command) {
-                    game.apply_command(gc.player_id, &cmd);
-                    translated += 1;
-                }
+                && let Some(cmd) = translate(&gc.command)
+            {
+                game.apply_command(gc.player_id, &cmd);
+                translated += 1;
+            }
             cmd_idx += 1;
         }
         game.step();

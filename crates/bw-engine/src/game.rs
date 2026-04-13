@@ -325,12 +325,13 @@ impl Game {
         // Phase 1: Movement.
         for slot in &mut self.units {
             if let Some(unit) = slot
-                && unit.alive {
-                    unit.update_movement();
-                    if unit.weapon_cooldown > 0 {
-                        unit.weapon_cooldown -= 1;
-                    }
+                && unit.alive
+            {
+                unit.update_movement();
+                if unit.weapon_cooldown > 0 {
+                    unit.weapon_cooldown -= 1;
                 }
+            }
         }
 
         // Phase 2: Combat — resolve attacks.
@@ -385,24 +386,25 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
-                && unit.alive {
-                    unit.attack_target = None;
-                    unit.move_target = Some((x, y));
-                    unit.move_state = MoveState::Moving;
+                && unit.alive
+            {
+                unit.attack_target = None;
+                unit.move_target = Some((x, y));
+                unit.move_state = MoveState::Moving;
 
-                    let waypoints = pathfind::find_path(
-                        &self.map,
-                        &self.region_map,
-                        unit.pixel_x,
-                        unit.pixel_y,
-                        x as i32,
-                        y as i32,
-                    )
-                    .unwrap_or_else(|| vec![(x as i32, y as i32)]);
+                let waypoints = pathfind::find_path(
+                    &self.map,
+                    &self.region_map,
+                    unit.pixel_x,
+                    unit.pixel_y,
+                    x as i32,
+                    y as i32,
+                )
+                .unwrap_or_else(|| vec![(x as i32, y as i32)]);
 
-                    unit.waypoints = waypoints;
-                    unit.waypoint_index = 0;
-                }
+                unit.waypoints = waypoints;
+                unit.waypoint_index = 0;
+            }
         }
     }
 
@@ -411,10 +413,11 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
-                && unit.alive {
-                    unit.attack_target = Some(target_tag);
-                    // Movement toward target is handled in update_combat.
-                }
+                && unit.alive
+            {
+                unit.attack_target = Some(target_tag);
+                // Movement toward target is handled in update_combat.
+            }
         }
     }
 
@@ -423,15 +426,16 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
-                && unit.alive {
-                    unit.move_target = None;
-                    unit.move_state = MoveState::AtRest;
-                    unit.velocity = XY::ZERO;
-                    unit.current_speed = Fp8::ZERO;
-                    unit.waypoints.clear();
-                    unit.waypoint_index = 0;
-                    unit.attack_target = None;
-                }
+                && unit.alive
+            {
+                unit.move_target = None;
+                unit.move_state = MoveState::AtRest;
+                unit.velocity = XY::ZERO;
+                unit.current_speed = Fp8::ZERO;
+                unit.waypoints.clear();
+                unit.waypoint_index = 0;
+                unit.attack_target = None;
+            }
         }
     }
 
@@ -440,10 +444,12 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
-                && unit.alive && unit.is_building
-                    && unit.build_queue.len() < 5 {
-                        unit.build_queue.push(unit_type);
-                    }
+                && unit.alive
+                && unit.is_building
+                && unit.build_queue.len() < 5
+            {
+                unit.build_queue.push(unit_type);
+            }
         }
     }
 
@@ -463,24 +469,25 @@ impl Game {
         if let Some(&tag) = tags.first() {
             let uid = UnitId::from_tag(tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
-                && unit.alive {
-                    let flingy = self
-                        .data
-                        .flingy_for_unit(unit_type)
-                        .copied()
-                        .unwrap_or_default();
-                    let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
-                    unit.unit_type = unit_type;
-                    unit.top_speed = flingy.top_speed;
-                    unit.acceleration = flingy.acceleration;
-                    unit.turn_rate = flingy.turn_rate;
-                    unit.movement_type = flingy.movement_type;
-                    unit.hp = ut.hitpoints;
-                    unit.max_hp = ut.hitpoints;
-                    unit.armor = ut.armor;
-                    unit.ground_weapon = ut.ground_weapon;
-                    unit.air_weapon = ut.air_weapon;
-                }
+                && unit.alive
+            {
+                let flingy = self
+                    .data
+                    .flingy_for_unit(unit_type)
+                    .copied()
+                    .unwrap_or_default();
+                let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
+                unit.unit_type = unit_type;
+                unit.top_speed = flingy.top_speed;
+                unit.acceleration = flingy.acceleration;
+                unit.turn_rate = flingy.turn_rate;
+                unit.movement_type = flingy.movement_type;
+                unit.hp = ut.hitpoints;
+                unit.max_hp = ut.hitpoints;
+                unit.armor = ut.armor;
+                unit.ground_weapon = ut.ground_weapon;
+                unit.air_weapon = ut.air_weapon;
+            }
         }
     }
 
@@ -670,15 +677,17 @@ impl Game {
         self.vision.clear_visible();
         for slot in &self.units {
             if let Some(unit) = slot
-                && unit.alive && unit.owner < 8 {
-                    let sight = self
-                        .data
-                        .unit_type(unit.unit_type)
-                        .map(|ut| ut.sight_range)
-                        .unwrap_or(7);
-                    self.vision
-                        .reveal(unit.pixel_x, unit.pixel_y, sight, unit.owner);
-                }
+                && unit.alive
+                && unit.owner < 8
+            {
+                let sight = self
+                    .data
+                    .unit_type(unit.unit_type)
+                    .map(|ut| ut.sight_range)
+                    .unwrap_or(7);
+                self.vision
+                    .reveal(unit.pixel_x, unit.pixel_y, sight, unit.owner);
+            }
         }
     }
 

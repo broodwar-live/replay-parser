@@ -90,11 +90,13 @@ impl GameData {
 
         // SC:R's .dat files have speed=1 for many units (reorganized flingy IDs).
         // If the parsed speed looks wrong, use the fallback.
-        if parsed.top_speed <= 1 && !ut.is_building
+        if parsed.top_speed <= 1
+            && !ut.is_building
             && let Some(fb) = self.fallback_flingy.get(unit_type as usize)
-                && fb.top_speed > 1 {
-                    return Some(fb);
-                }
+            && fb.top_speed > 1
+        {
+            return Some(fb);
+        }
         Some(parsed)
     }
 

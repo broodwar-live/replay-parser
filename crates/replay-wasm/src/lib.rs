@@ -166,9 +166,10 @@ impl GameSim {
         {
             let gc = &self.commands[self.command_cursor];
             if gc.frame == next_frame
-                && let Some(cmd) = translate_command(&gc.command) {
-                    self.inner.apply_command(gc.player_id, &cmd);
-                }
+                && let Some(cmd) = translate_command(&gc.command)
+            {
+                self.inner.apply_command(gc.player_id, &cmd);
+            }
             self.command_cursor += 1;
         }
 

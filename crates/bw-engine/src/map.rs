@@ -470,7 +470,7 @@ mod tests {
         let vf4_data = build_vf4_entry(&[MiniTile::WALKABLE; 16]);
         let cv5_data = build_cv5_entry(0, &[0u16; 16]);
 
-        let tile_id_oob: u16 = 1 << 4 ; // group 1, subtile 0
+        let tile_id_oob: u16 = 1 << 4; // group 1, subtile 0
         let mut mtxm = Vec::new();
         mtxm.extend_from_slice(&tile_id_oob.to_le_bytes());
         let mut chk = build_section(b"DIM ", &[1, 0, 1, 0]);

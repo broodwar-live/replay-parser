@@ -133,12 +133,13 @@ fn find_tile_path(
 
             // For diagonal moves, both adjacent cardinal tiles must be passable
             // (prevents cutting through diagonal wall corners).
-            if ddx != 0 && ddy != 0
+            if ddx != 0
+                && ddy != 0
                 && (!map.is_tile_passable((cx + ddx) as u16, cy as u16)
                     || !map.is_tile_passable(cx as u16, (cy + ddy) as u16))
-                {
-                    continue;
-                }
+            {
+                continue;
+            }
 
             let ni = idx(nx, ny);
             if closed[ni] {

@@ -147,6 +147,36 @@ fn run_full_sim(replay_name: &str) {
     let mut translated = 0;
     let mut peak = initial;
     let mut deaths = 0;
+    let mut attack_cmds = 0;
+    let mut attack_resolves = 0;
+
+    // Count attack commands and check tag resolution
+    let mut max_select_tag: u16 = 0;
+    let mut select_cmds = 0;
+    for gc in &replay.commands {
+        if let Some(cmd) = translate(&gc.command) {
+            match &cmd {
+                EngineCommand::Attack { target_tag } => {
+                    attack_cmds += 1;
+                    let uid = bw_engine::UnitId::from_tag(*target_tag);
+                    if (uid.index() as usize) < bw_engine::game::MAX_UNITS {
+                        attack_resolves += 1;
+                    }
+                }
+                EngineCommand::Select(tags) => {
+                    select_cmds += 1;
+                    for &t in tags {
+                        let idx = bw_engine::UnitId::from_tag(t).index();
+                        if idx > max_select_tag { max_select_tag = idx; }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    println!("  Attack commands: {}, resolvable: {}", attack_cmds, attack_resolves);
+    println!("  Select commands: {}, max tag index: {}, our next_index: ~{}",
+        select_cmds, max_select_tag, initial);
 
     for frame in 1..=total_frames {
         while cmd_idx < replay.commands.len() && replay.commands[cmd_idx].frame <= frame {
@@ -176,6 +206,8 @@ fn run_full_sim(replay_name: &str) {
     println!("  Commands: {} / {} ({:.0}%)", translated, replay.commands.len(),
         translated as f64 / replay.commands.len().max(1) as f64 * 100.0);
     println!("  Units: {} initial -> {} final (peak {}, {} deaths)", initial, game.unit_count(), peak, deaths);
+    println!("  Combat: {} fires, {} target_not_found, {} no_weapon, {} out_of_range",
+        game.debug_fires, game.debug_target_not_found, game.debug_no_weapon, game.debug_out_of_range);
     println!("  PASSED");
 }
 

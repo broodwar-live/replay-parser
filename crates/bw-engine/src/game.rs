@@ -54,6 +54,11 @@ pub struct Game {
     next_unit_index: u16,
     pub player_states: [PlayerState; MAX_PLAYERS],
     pub vision: VisionMap,
+    /// Debug counter: total weapon fires.
+    pub debug_fires: u32,
+    pub debug_target_not_found: u32,
+    pub debug_no_weapon: u32,
+    pub debug_out_of_range: u32,
 }
 
 impl Game {
@@ -71,6 +76,10 @@ impl Game {
             next_unit_index: 0,
             player_states: Default::default(),
             vision: VisionMap::new(w, h),
+            debug_fires: 0,
+            debug_target_not_found: 0,
+            debug_no_weapon: 0,
+            debug_out_of_range: 0,
         }
     }
 
@@ -360,7 +369,7 @@ impl Game {
         self.units
             .get(uid.index() as usize)?
             .as_ref()
-            .filter(|u| u.id.generation() == uid.generation() && u.alive)
+            .filter(|u| u.alive)
     }
 
     pub fn unit_count(&self) -> usize {
@@ -378,7 +387,7 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.id.generation() == uid.generation() && unit.alive {
+                if unit.alive {
                     unit.attack_target = None;
                     unit.move_target = Some((x, y));
                     unit.move_state = MoveState::Moving;
@@ -405,7 +414,7 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.id.generation() == uid.generation() && unit.alive {
+                if unit.alive {
                     unit.attack_target = Some(target_tag);
                     // Movement toward target is handled in update_combat.
                 }
@@ -418,7 +427,7 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.id.generation() == uid.generation() && unit.alive {
+                if unit.alive {
                     unit.move_target = None;
                     unit.move_state = MoveState::AtRest;
                     unit.velocity = XY::ZERO;
@@ -436,7 +445,7 @@ impl Game {
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.id.generation() == uid.generation() && unit.alive && unit.is_building {
+                if unit.alive && unit.is_building {
                     if unit.build_queue.len() < 5 {
                         unit.build_queue.push(unit_type);
                     }
@@ -461,7 +470,7 @@ impl Game {
         if let Some(&tag) = tags.first() {
             let uid = UnitId::from_tag(tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
-                if unit.id.generation() == uid.generation() && unit.alive {
+                if unit.alive {
                     let flingy = self.data.flingy_for_unit(unit_type).copied().unwrap_or_default();
                     let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
                     unit.unit_type = unit_type;
@@ -492,13 +501,53 @@ impl Game {
         let mut attacks: Vec<(usize, u16)> = Vec::new();
 
         for (i, slot) in self.units.iter().enumerate() {
-            if let Some(unit) = slot {
-                if !unit.alive {
+            let Some(unit) = slot else { continue };
+            if !unit.alive || unit.owner >= 8 {
+                continue;
+            }
+
+            if let Some(target_tag) = unit.attack_target {
+                let target_uid = UnitId::from_tag(target_tag);
+                let target_owner = self.units.get(target_uid.index() as usize)
+                    .and_then(|s| s.as_ref())
+                    .map(|u| u.owner);
+                if target_owner != Some(unit.owner) {
+                    attacks.push((i, target_tag));
                     continue;
                 }
-                if let Some(target_tag) = unit.attack_target {
-                    attacks.push((i, target_tag));
+            }
+
+            // Auto-attack: if no explicit target and unit has a weapon,
+            // find the nearest enemy unit within acquisition range.
+            let weapon_id = unit.ground_weapon;
+            if weapon_id >= 130 {
+                continue; // No weapon.
+            }
+            let acq_range = self.data.unit_type(unit.unit_type)
+                .map(|ut| ut.sight_range as i32 * 32)
+                .unwrap_or(0);
+            if acq_range == 0 {
+                continue;
+            }
+
+            let mut best_dist = i64::MAX;
+            let mut best_tag: Option<u16> = None;
+            for (j, other_slot) in self.units.iter().enumerate() {
+                let Some(other) = other_slot else { continue };
+                if !other.alive || other.owner == unit.owner || other.owner >= 8 {
+                    continue;
                 }
+                let dx = (unit.pixel_x - other.pixel_x) as i64;
+                let dy = (unit.pixel_y - other.pixel_y) as i64;
+                let dist = dx * dx + dy * dy;
+                let acq = acq_range as i64;
+                if dist < acq * acq && dist < best_dist {
+                    best_dist = dist;
+                    best_tag = Some(other.id.to_tag());
+                }
+            }
+            if let Some(tag) = best_tag {
+                attacks.push((i, tag));
             }
         }
 
@@ -507,14 +556,14 @@ impl Game {
             let ti = target_uid.index() as usize;
 
             // Get target position and alive status.
+            // Note: only check index, not generation — replay tags may have
+            // generation mismatches with our simulation.
             let target_info = self.units.get(ti).and_then(|s| {
-                s.as_ref().filter(|u| {
-                    u.id.generation() == target_uid.generation() && u.alive
-                })
+                s.as_ref().filter(|u| u.alive)
             }).map(|u| (u.pixel_x, u.pixel_y));
 
             let Some((tx, ty)) = target_info else {
-                // Target dead or invalid — clear attack.
+                self.debug_target_not_found += 1;
                 if let Some(Some(unit)) = self.units.get_mut(attacker_idx) {
                     unit.attack_target = None;
                 }
@@ -523,9 +572,10 @@ impl Game {
 
             // Check range and fire.
             let attacker = self.units[attacker_idx].as_ref().unwrap();
-            let weapon_id = attacker.ground_weapon; // simplified: use ground weapon
+            let weapon_id = attacker.ground_weapon;
             let Some(weapon) = self.data.weapon_type(weapon_id) else {
-                continue; // No weapon.
+                self.debug_no_weapon += 1;
+                continue;
             };
 
             let dx = (attacker.pixel_x - tx).abs();
@@ -535,7 +585,7 @@ impl Game {
             let range_sq = range * range;
 
             if dist_sq <= range_sq && attacker.weapon_cooldown == 0 {
-                // Fire! Apply damage to target.
+                self.debug_fires += 1;
                 let damage = weapon.damage_amount as i32 * weapon.damage_factor.max(1) as i32;
                 let target_armor = self.units[ti].as_ref().map(|u| u.armor).unwrap_or(0);
                 let effective_damage = (damage - target_armor as i32).max(1);
@@ -554,7 +604,7 @@ impl Game {
                     unit.weapon_cooldown = weapon.cooldown as u16;
                 }
             } else if dist_sq > range_sq {
-                // Out of range — move toward target.
+                self.debug_out_of_range += 1;
                 let attacker = self.units[attacker_idx].as_mut().unwrap();
                 if attacker.move_state != MoveState::Moving
                     || attacker.move_target != Some((tx as u16, ty as u16))
@@ -810,19 +860,21 @@ mod tests {
     #[test]
     fn test_attack_kills_target() {
         let mut game = Game::new(test_map(), test_game_data());
-        // Two marines close together (within range=128px).
+        // Two marines: attacker has extra HP to survive mutual auto-attack.
         game.load_initial_units(&[
             make_chk_unit(0, 50, 50, 0, 0),  // attacker
-            make_chk_unit(1, 100, 50, 0, 1),  // target (50px away, within 128px range)
+            make_chk_unit(1, 100, 50, 0, 1),  // target
         ])
         .unwrap();
+        // Give attacker extra HP to survive the mutual combat.
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.hp = 200 * 256;
+            u.max_hp = 200 * 256;
+        }
 
-        // Player 0 selects marine 0 and attacks marine 1.
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Attack { target_tag: 1 });
 
-        // Step enough frames for the target to die.
-        // Marine: 40 HP, weapon does 6 dmg every 15 frames → ~7 hits = ~105 frames.
         for _ in 0..200 {
             game.step();
             if game.unit_by_tag(1).is_none() {
@@ -842,6 +894,10 @@ mod tests {
             make_chk_unit(1, 100, 50, 0, 1),
         ])
         .unwrap();
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.hp = 200 * 256;
+            u.max_hp = 200 * 256;
+        }
 
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Attack { target_tag: 1 });

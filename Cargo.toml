@@ -4,6 +4,7 @@ members = [
     "crates/replay-core",
     "crates/replay-wasm",
     "crates/replay-nif",
+    "crates/bw-engine",
 ]
 
 [workspace.package]
@@ -16,3 +17,4 @@ thiserror = "2"
 flate2 = "1"
 encoding_rs = "0.8"
 explode = "0.1"
+bitflags = "2"

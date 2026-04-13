@@ -1,0 +1,14 @@
+[package]
+name = "bw-engine"
+version = "0.1.0"
+description = "StarCraft: Brood War engine reimplementation for WASM"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+bitflags.workspace = true
+
+[dev-dependencies]
+replay-core = { path = "../replay-core" }

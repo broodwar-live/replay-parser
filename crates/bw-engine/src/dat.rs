@@ -18,15 +18,19 @@ pub struct FlingyType {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UnitType {
     pub flingy_id: u8,
-    pub hitpoints: i32,       // fp8
-    pub ground_weapon: u8,    // 255 = none
+    pub turret_unit_type: u16, // 228 = none
+    pub hitpoints: i32,        // fp8
+    pub ground_weapon: u8,     // 130 = none
     pub max_ground_hits: u8,
-    pub air_weapon: u8,       // 255 = none
+    pub air_weapon: u8,        // 130 = none
     pub max_air_hits: u8,
     pub armor: u8,
-    pub build_time: u16,      // frames
+    pub build_time: u16,       // frames
     pub is_building: bool,
 }
+
+/// Terran_Command_Center unit type ID — turrets only created for units below this.
+pub const COMMAND_CENTER_ID: u16 = 117;
 
 /// Weapon type data parsed from weapons.dat.
 #[derive(Debug, Clone, Copy, Default)]
@@ -219,9 +223,10 @@ fn parse_units_dat(data: &[u8]) -> Result<Vec<UnitType>> {
     for i in 0..U {
         let flingy_id = data[U_FLINGY + i];
 
-        let (hitpoints, ground_weapon, max_ground_hits, air_weapon, max_air_hits, armor, build_time, is_building) =
+        let (turret_unit_type, hitpoints, ground_weapon, max_ground_hits, air_weapon, max_air_hits, armor, build_time, is_building) =
             if has_full {
                 (
+                    read_u16_le(data, U_TURRET + i * 2),
                     read_i32_le(data, U_HITPOINTS + i * 4),
                     data[U_GROUND_WEAPON + i],
                     data[U_MAX_GROUND_HITS + i],
@@ -232,11 +237,12 @@ fn parse_units_dat(data: &[u8]) -> Result<Vec<UnitType>> {
                     read_u32_le(data, U_FLAGS + i * 4) & FLAG_BUILDING != 0,
                 )
             } else {
-                (0, 130, 0, 130, 0, 0, 0, false)
+                (228, 0, 130, 0, 130, 0, 0, 0, false)
             };
 
         types.push(UnitType {
             flingy_id,
+            turret_unit_type,
             hitpoints,
             ground_weapon,
             max_ground_hits,

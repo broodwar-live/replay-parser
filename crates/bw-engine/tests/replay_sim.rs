@@ -32,6 +32,7 @@ fn synthetic_game_data() -> GameData {
 
     let default_unit = UnitType {
         flingy_id: 0,
+        turret_unit_type: 228, // no turret
         hitpoints: 40 * 256,
         ground_weapon: 0,
         max_ground_hits: 1,
@@ -172,8 +173,37 @@ fn run_sim(replay_name: &str) -> SimResult {
 
     // Load initial units from CHK.
     let sections = chk::parse_sections(&replay.map_data).unwrap();
-    let chk_units = chk_units::parse_chk_units(&sections).unwrap();
-    game.load_initial_units(&chk_units).unwrap();
+    let units = chk_units::parse_chk_units(&sections).unwrap();
+    game.load_initial_units(&units).unwrap();
+
+    // For melee games, create starting units.
+    let is_melee = matches!(
+        replay.header.game_type,
+        replay_core::header::GameType::Melee | replay_core::header::GameType::OneOnOne
+    );
+    if is_melee {
+        let start_locs = chk_units::parse_start_locations(&sections);
+        let player_races: Vec<(u8, u8)> = replay
+            .header
+            .players
+            .iter()
+            .map(|p| {
+                let race = match p.race {
+                    replay_core::header::Race::Zerg => 0u8,
+                    replay_core::header::Race::Terran => 1,
+                    replay_core::header::Race::Protoss => 2,
+                    _ => 1,
+                };
+                (p.player_id, race)
+            })
+            .collect();
+        let locs: Vec<(u8, i32, i32)> = start_locs
+            .iter()
+            .map(|&(owner, x, y)| (owner, x as i32, y as i32))
+            .collect();
+        game.create_melee_starting_units(&locs, &player_races);
+    }
+
     let initial_units = game.unit_count();
 
     // Process all commands frame by frame.

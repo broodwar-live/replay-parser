@@ -57,12 +57,8 @@ pub fn parse_chk_units(sections: &[ChkSection<'_>]) -> Result<Vec<ChkUnit>> {
         // bytes 28-31: unused
         // bytes 32-35: related_unit_id
 
-        // Skip invalid entries (unit_type 0xFFFF).
-        if unit_type == 0xFFFF {
-            continue;
-        }
-        // Skip unit types >= 228.
-        if unit_type >= 228 {
+        // Skip invalid entries (unit_type 0xFFFF) and out-of-range types.
+        if unit_type == 0xFFFF || unit_type >= 228 {
             continue;
         }
 
@@ -80,6 +76,44 @@ pub fn parse_chk_units(sections: &[ChkSection<'_>]) -> Result<Vec<ChkUnit>> {
     }
 
     Ok(units)
+}
+
+/// Start Location unit type ID.
+const START_LOCATION: u16 = 214;
+
+/// Extract start locations from CHK sections.
+/// Returns `(owner, x, y)` for each start location.
+pub fn parse_start_locations(sections: &[ChkSection<'_>]) -> Vec<(u8, u16, u16)> {
+    let mut unit_data: Option<&[u8]> = None;
+    for section in sections {
+        if section.tag == *b"UNIT" {
+            unit_data = Some(section.data);
+        }
+    }
+
+    let Some(data) = unit_data else {
+        return Vec::new();
+    };
+
+    let count = data.len() / UNIT_ENTRY_SIZE;
+    let mut locations = Vec::new();
+
+    for i in 0..count {
+        let base = i * UNIT_ENTRY_SIZE;
+        if base + UNIT_ENTRY_SIZE > data.len() {
+            break;
+        }
+        let x = u16::from_le_bytes(data[base + 4..base + 6].try_into().unwrap());
+        let y = u16::from_le_bytes(data[base + 6..base + 8].try_into().unwrap());
+        let unit_type = u16::from_le_bytes(data[base + 8..base + 10].try_into().unwrap());
+        let owner = data[base + 16];
+
+        if unit_type == START_LOCATION {
+            locations.push((owner, x, y));
+        }
+    }
+
+    locations
 }
 
 #[cfg(test)]

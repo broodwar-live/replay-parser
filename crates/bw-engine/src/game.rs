@@ -52,6 +52,8 @@ impl Game {
     }
 
     /// Load initial units from CHK UNIT section entries.
+    ///
+    /// Matches BW's tag assignment order by also allocating turret subunit slots.
     pub fn load_initial_units(&mut self, chk_units: &[ChkUnit]) -> Result<()> {
         for chu in chk_units {
             if self.next_unit_index as usize >= MAX_UNITS {
@@ -67,6 +69,10 @@ impl Game {
     }
 
     /// Create a new unit and return its tag, or None if at capacity.
+    ///
+    /// Matches BW's allocation: if the unit type has a turret subunit
+    /// (unit_type < 117 and turret_unit_type < 228), a slot is also
+    /// allocated for the turret.
     fn create_unit(&mut self, unit_type: u16, owner: u8, x: i32, y: i32) -> Option<u16> {
         if self.next_unit_index as usize >= MAX_UNITS {
             return None;
@@ -115,7 +121,115 @@ impl Game {
             is_building: ut.is_building,
         };
         self.units[index as usize] = Some(unit);
+
+        // BW allocates a turret subunit for non-building units with a turret type.
+        // This consumes the next slot, matching BW's tag assignment.
+        if unit_type < crate::dat::COMMAND_CENTER_ID && ut.turret_unit_type < 228 {
+            self.create_turret_slot(ut.turret_unit_type, owner, x, y);
+        }
+
         Some(id.to_tag())
+    }
+
+    /// Allocate a slot for a turret subunit (not a full unit, just reserves the index).
+    fn create_turret_slot(&mut self, turret_type: u16, owner: u8, x: i32, y: i32) {
+        if self.next_unit_index as usize >= MAX_UNITS {
+            return;
+        }
+        let index = self.next_unit_index;
+        self.next_unit_index += 1;
+
+        let flingy = self
+            .data
+            .flingy_for_unit(turret_type)
+            .copied()
+            .unwrap_or_default();
+        let ut = self
+            .data
+            .unit_type(turret_type)
+            .copied()
+            .unwrap_or_default();
+
+        let id = UnitId::new(index, 0);
+        // Turrets are alive but invisible in our sim (they track the parent).
+        self.units[index as usize] = Some(UnitState {
+            id,
+            unit_type: turret_type,
+            owner,
+            alive: true,
+            exact_position: XY::from_pixels(x, y),
+            pixel_x: x,
+            pixel_y: y,
+            velocity: XY::ZERO,
+            heading: Direction::default(),
+            current_speed: Fp8::ZERO,
+            move_state: MoveState::AtRest,
+            move_target: None,
+            waypoints: Vec::new(),
+            waypoint_index: 0,
+            top_speed: flingy.top_speed,
+            acceleration: flingy.acceleration,
+            halt_distance: flingy.halt_distance,
+            turn_rate: flingy.turn_rate,
+            movement_type: flingy.movement_type,
+            hp: ut.hitpoints,
+            max_hp: ut.hitpoints,
+            armor: ut.armor,
+            ground_weapon: ut.ground_weapon,
+            air_weapon: ut.air_weapon,
+            weapon_cooldown: 0,
+            attack_target: None,
+            build_queue: Vec::new(),
+            build_timer: 0,
+            is_building: false,
+        });
+    }
+
+    /// Create melee starting units for each player.
+    ///
+    /// Call after `load_initial_units`. For each player with a start location
+    /// in the CHK, creates the standard starting units (resource depot + workers).
+    /// `player_races` maps player_id -> race (0=Zerg, 1=Terran, 2=Protoss).
+    pub fn create_melee_starting_units(
+        &mut self,
+        start_locations: &[(u8, i32, i32)], // (player_id, x, y)
+        player_races: &[(u8, u8)],           // (player_id, race)
+    ) {
+        let race_map: std::collections::HashMap<u8, u8> =
+            player_races.iter().copied().collect();
+
+        for &(player_id, x, y) in start_locations {
+            let race = race_map.get(&player_id).copied().unwrap_or(1);
+
+            match race {
+                0 => {
+                    // Zerg: Hatchery (142) + 4 Drones (42) + Overlord (43)
+                    self.create_unit(142, player_id, x, y); // Hatchery
+                    // BW spawns 2 larvae for the starting hatchery.
+                    self.create_unit(35, player_id, x - 32, y + 32); // Larva
+                    self.create_unit(35, player_id, x, y + 32);      // Larva
+                    // Then Overlord, then 4 Drones.
+                    self.create_unit(43, player_id, x + 32, y - 64); // Overlord
+                    for i in 0..4 {
+                        self.create_unit(42, player_id, x - 48 + i * 24, y + 48); // Drone
+                    }
+                }
+                2 => {
+                    // Protoss: Nexus (154) + 4 Probes (64)
+                    self.create_unit(154, player_id, x, y); // Nexus
+                    for i in 0..4 {
+                        self.create_unit(64, player_id, x - 48 + i * 24, y + 48); // Probe
+                    }
+                }
+                _ => {
+                    // Terran: Command Center (117) + 4 SCVs (7)
+                    self.create_unit(117, player_id, x, y); // Command Center
+                    for i in 0..4 {
+                        self.create_unit(7, player_id, x - 48 + i * 24, y + 48); // SCV
+                    }
+                }
+            }
+        }
     }
 
     /// Apply a command from a player.
@@ -432,19 +546,21 @@ mod tests {
 
         let marine_ut = UnitType {
             flingy_id: 0,
+            turret_unit_type: 228, // no turret
             hitpoints: 40 * 256,
             ground_weapon: 0,
             max_ground_hits: 1,
             air_weapon: 130,
             max_air_hits: 0,
             armor: 0,
-            build_time: 30, // 30 frames for testing
+            build_time: 30,
             is_building: false,
         };
         let barracks_ut = UnitType {
             flingy_id: 0,
+            turret_unit_type: 228,
             hitpoints: 1000 * 256,
-            ground_weapon: 130, // no weapon
+            ground_weapon: 130,
             max_ground_hits: 0,
             air_weapon: 130,
             max_air_hits: 0,

@@ -20,14 +20,56 @@ pub struct UnitType {
     pub flingy_id: u8,
     pub turret_unit_type: u16, // 228 = none
     pub hitpoints: i32,        // fp8
-    pub ground_weapon: u8,     // 130 = none
+    pub shield_points: u16,    // NOT fp8 — raw shield HP
+    pub has_shield: bool,
+    pub ground_weapon: u8, // 130 = none
     pub max_ground_hits: u8,
     pub air_weapon: u8, // 130 = none
     pub max_air_hits: u8,
     pub armor: u8,
+    pub armor_upgrade: u8, // upgrade ID that increases armor
+    pub unit_size: UnitSize,
+    pub elevation: u8,   // >4 means air unit
     pub sight_range: u8, // in tiles (32px)
     pub build_time: u16, // frames
+    pub mineral_cost: u16,
+    pub gas_cost: u16,
+    pub supply_cost: u8, // in half-units (Marine = 2, Zergling = 1)
     pub is_building: bool,
+}
+
+impl UnitType {
+    /// Whether this unit type is an air unit (flyer).
+    pub fn is_air(&self) -> bool {
+        self.elevation >= 4
+    }
+}
+
+/// Unit size class for damage type calculations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum UnitSize {
+    /// Independent (buildings, special units) — takes full damage from all types.
+    #[default]
+    Independent = 0,
+    /// Small (Marine, Zergling, etc.)
+    Small = 1,
+    /// Medium (Vulture, Hydralisk, etc.)
+    Medium = 2,
+    /// Large (Siege Tank, Ultralisk, etc.)
+    Large = 3,
+}
+
+impl UnitSize {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::Independent,
+            1 => Self::Small,
+            2 => Self::Medium,
+            3 => Self::Large,
+            _ => Self::Independent,
+        }
+    }
 }
 
 /// Terran_Command_Center unit type ID — turrets only created for units below this.
@@ -40,7 +82,53 @@ pub struct WeaponType {
     pub damage_bonus: u16,
     pub cooldown: u8,
     pub damage_factor: u8,
+    pub damage_type: DamageType,
     pub max_range: u32, // in pixels (not fp8)
+}
+
+/// Weapon damage type for size-based modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum DamageType {
+    #[default]
+    Independent = 0,
+    Explosive = 1,
+    Concussive = 2,
+    Normal = 3,
+    IgnoreArmor = 4,
+}
+
+impl DamageType {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::Independent,
+            1 => Self::Explosive,
+            2 => Self::Concussive,
+            3 => Self::Normal,
+            4 => Self::IgnoreArmor,
+            _ => Self::Independent,
+        }
+    }
+
+    /// Damage multiplier against a given unit size.
+    /// Returns (numerator, denominator) to avoid floats.
+    pub fn size_modifier(self, size: UnitSize) -> (u32, u32) {
+        match self {
+            DamageType::Concussive => match size {
+                UnitSize::Small => (1, 1),
+                UnitSize::Medium => (1, 2),
+                UnitSize::Large => (1, 4),
+                UnitSize::Independent => (1, 1),
+            },
+            DamageType::Explosive => match size {
+                UnitSize::Small => (1, 2),
+                UnitSize::Medium => (3, 4),
+                UnitSize::Large => (1, 1),
+                UnitSize::Independent => (1, 1),
+            },
+            DamageType::Normal | DamageType::Independent | DamageType::IgnoreArmor => (1, 1),
+        }
+    }
 }
 
 /// Parsed game data tables.
@@ -298,47 +386,51 @@ fn parse_units_dat(data: &[u8]) -> Result<Vec<UnitType>> {
     for i in 0..U {
         let flingy_id = data[U_FLINGY + i];
 
-        let (
-            turret_unit_type,
-            hitpoints,
-            ground_weapon,
-            max_ground_hits,
-            air_weapon,
-            max_air_hits,
-            armor,
-            sight_range,
-            build_time,
-            is_building,
-        ) = if has_full {
-            (
-                read_u16_le(data, U_TURRET + i * 2),
-                read_i32_le(data, U_HITPOINTS + i * 4),
-                data[U_GROUND_WEAPON + i],
-                data[U_MAX_GROUND_HITS + i],
-                data[U_AIR_WEAPON + i],
-                data[U_MAX_AIR_HITS + i],
-                data[U_ARMOR + i],
-                data[U_SIGHT_RANGE + i],
-                read_u16_le(data, U_BUILD_TIME + i * 2),
-                read_u32_le(data, U_FLAGS + i * 4) & FLAG_BUILDING != 0,
-            )
+        if has_full {
+            types.push(UnitType {
+                flingy_id,
+                turret_unit_type: read_u16_le(data, U_TURRET + i * 2),
+                hitpoints: read_i32_le(data, U_HITPOINTS + i * 4),
+                shield_points: read_u16_le(data, U_SHIELD_POINTS + i * 2),
+                has_shield: data[U_HAS_SHIELD + i] != 0,
+                ground_weapon: data[U_GROUND_WEAPON + i],
+                max_ground_hits: data[U_MAX_GROUND_HITS + i],
+                air_weapon: data[U_AIR_WEAPON + i],
+                max_air_hits: data[U_MAX_AIR_HITS + i],
+                armor: data[U_ARMOR + i],
+                armor_upgrade: data[U_ARMOR_UPGRADE + i],
+                unit_size: UnitSize::from_u8(data[U_UNIT_SIZE + i]),
+                elevation: data[U_ELEVATION + i],
+                sight_range: data[U_SIGHT_RANGE + i],
+                build_time: read_u16_le(data, U_BUILD_TIME + i * 2),
+                mineral_cost: read_u16_le(data, U_MINERAL_COST + i * 2),
+                gas_cost: read_u16_le(data, U_GAS_COST + i * 2),
+                supply_cost: 0, // supply is in a separate section not in units.dat
+                is_building: read_u32_le(data, U_FLAGS + i * 4) & FLAG_BUILDING != 0,
+            });
         } else {
-            (228, 0, 130, 0, 130, 0, 0, 7, 0, false)
-        };
-
-        types.push(UnitType {
-            flingy_id,
-            turret_unit_type,
-            hitpoints,
-            ground_weapon,
-            max_ground_hits,
-            air_weapon,
-            max_air_hits,
-            armor,
-            sight_range,
-            build_time,
-            is_building,
-        });
+            types.push(UnitType {
+                flingy_id,
+                turret_unit_type: 228,
+                hitpoints: 0,
+                shield_points: 0,
+                has_shield: false,
+                ground_weapon: 130,
+                max_ground_hits: 0,
+                air_weapon: 130,
+                max_air_hits: 0,
+                armor: 0,
+                armor_upgrade: 0,
+                unit_size: UnitSize::Independent,
+                elevation: 0,
+                sight_range: 7,
+                build_time: 0,
+                mineral_cost: 0,
+                gas_cost: 0,
+                supply_cost: 0,
+                is_building: false,
+            });
+        }
     }
 
     Ok(types)
@@ -387,6 +479,7 @@ fn parse_weapons_dat(data: &[u8]) -> Result<Vec<WeaponType>> {
             damage_bonus: read_u16_le(data, W_DAMAGE_BONUS + i * 2),
             cooldown: data[W_COOLDOWN + i],
             damage_factor: data[W_BULLET_COUNT + i], // bullet_count acts as damage_factor
+            damage_type: DamageType::from_u8(data[W_DAMAGE_TYPE + i]),
             max_range: read_u32_le(data, W_MAX_RANGE + i * 4),
         });
     }

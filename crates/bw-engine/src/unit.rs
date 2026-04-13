@@ -76,9 +76,13 @@ pub struct UnitState {
     pub movement_type: u8,
 
     // Combat
-    pub hp: i32,     // current HP in fp8
-    pub max_hp: i32, // max HP in fp8
+    pub hp: i32,          // current HP in fp8
+    pub max_hp: i32,      // max HP in fp8
+    pub shields: i32,     // current shields in fp8 (0 if no shields)
+    pub max_shields: i32, // max shields in fp8
     pub armor: u8,
+    pub unit_size: crate::dat::UnitSize,
+    pub is_air: bool,
     pub ground_weapon: u8,          // weapon type id (130 = none)
     pub air_weapon: u8,             // weapon type id (130 = none)
     pub weapon_cooldown: u16,       // frames until can fire again
@@ -88,6 +92,11 @@ pub struct UnitState {
     pub build_queue: Vec<u16>, // unit types queued for training
     pub build_timer: u16,      // frames remaining for current build
     pub is_building: bool,
+
+    // Construction / morph
+    pub under_construction: bool,  // building being constructed
+    pub morph_timer: u16,          // frames remaining for morph (0 = not morphing)
+    pub morph_target: Option<u16>, // unit type morphing into
 }
 
 impl UnitState {
@@ -216,7 +225,11 @@ mod tests {
             movement_type: 0,
             hp: 40 * 256,
             max_hp: 40 * 256,
+            shields: 0,
+            max_shields: 0,
             armor: 0,
+            unit_size: crate::dat::UnitSize::Small,
+            is_air: false,
             ground_weapon: 0,
             air_weapon: 130,
             weapon_cooldown: 0,
@@ -224,6 +237,9 @@ mod tests {
             build_queue: Vec::new(),
             build_timer: 0,
             is_building: false,
+            under_construction: false,
+            morph_timer: 0,
+            morph_target: None,
         }
     }
 

@@ -16,12 +16,57 @@ pub const MAX_UNITS: usize = 1700;
 pub const MAX_PLAYERS: usize = 8;
 
 /// Per-player resource and supply state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PlayerState {
     pub minerals: i32,
     pub gas: i32,
     pub supply_used: i32, // in half-units (Marine = 2, Zergling = 1)
     pub supply_max: i32,  // in half-units
+    /// Upgrade levels indexed by upgrade_type_id.
+    pub upgrade_levels: Vec<u8>,
+    /// Researched tech bitset (tech_type_id < 64).
+    pub researched_techs: u64,
+}
+
+impl Default for PlayerState {
+    fn default() -> Self {
+        Self {
+            minerals: 0,
+            gas: 0,
+            supply_used: 0,
+            supply_max: 0,
+            upgrade_levels: vec![0; 64],
+            researched_techs: 0,
+        }
+    }
+}
+
+impl PlayerState {
+    pub fn upgrade_level(&self, upgrade_id: u8) -> u8 {
+        self.upgrade_levels
+            .get(upgrade_id as usize)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub fn has_tech(&self, tech_id: u8) -> bool {
+        if tech_id >= 64 {
+            return false;
+        }
+        self.researched_techs & (1u64 << tech_id) != 0
+    }
+
+    fn research_tech(&mut self, tech_id: u8) {
+        if tech_id < 64 {
+            self.researched_techs |= 1u64 << tech_id;
+        }
+    }
+
+    fn increment_upgrade(&mut self, upgrade_id: u8) {
+        if let Some(level) = self.upgrade_levels.get_mut(upgrade_id as usize) {
+            *level = level.saturating_add(1);
+        }
+    }
 }
 
 /// Commands that the engine understands.
@@ -134,6 +179,11 @@ impl Game {
         let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
 
         let id = UnitId::new(index, 0);
+        let shield_hp = if ut.has_shield {
+            ut.shield_points as i32 * 256
+        } else {
+            0
+        };
         let unit = UnitState {
             id,
             unit_type,
@@ -156,7 +206,11 @@ impl Game {
             movement_type: flingy.movement_type,
             hp: ut.hitpoints,
             max_hp: ut.hitpoints,
+            shields: shield_hp,
+            max_shields: shield_hp,
             armor: ut.armor,
+            unit_size: ut.unit_size,
+            is_air: ut.is_air(),
             ground_weapon: ut.ground_weapon,
             air_weapon: ut.air_weapon,
             weapon_cooldown: 0,
@@ -164,6 +218,9 @@ impl Game {
             build_queue: Vec::new(),
             build_timer: 0,
             is_building: ut.is_building,
+            under_construction: false,
+            morph_timer: 0,
+            morph_target: None,
         };
         self.units[index as usize] = Some(unit);
 
@@ -196,6 +253,11 @@ impl Game {
             .unwrap_or_default();
 
         let id = UnitId::new(index, 0);
+        let shield_hp = if ut.has_shield {
+            ut.shield_points as i32 * 256
+        } else {
+            0
+        };
         // Turrets are alive but invisible in our sim (they track the parent).
         self.units[index as usize] = Some(UnitState {
             id,
@@ -219,7 +281,11 @@ impl Game {
             movement_type: flingy.movement_type,
             hp: ut.hitpoints,
             max_hp: ut.hitpoints,
+            shields: shield_hp,
+            max_shields: shield_hp,
             armor: ut.armor,
+            unit_size: ut.unit_size,
+            is_air: ut.is_air(),
             ground_weapon: ut.ground_weapon,
             air_weapon: ut.air_weapon,
             weapon_cooldown: 0,
@@ -227,6 +293,9 @@ impl Game {
             build_queue: Vec::new(),
             build_timer: 0,
             is_building: false,
+            under_construction: false,
+            morph_timer: 0,
+            morph_target: None,
         });
     }
 
@@ -312,8 +381,11 @@ impl Game {
             EngineCommand::BuildingMorph { unit_type } => {
                 self.issue_building_morph(player_id, *unit_type);
             }
-            EngineCommand::Research { .. } | EngineCommand::Upgrade { .. } => {
-                // Research/Upgrade: tracked for completeness but no gameplay effect yet.
+            EngineCommand::Research { tech_type } => {
+                self.issue_research(player_id, *tech_type);
+            }
+            EngineCommand::Upgrade { upgrade_type } => {
+                self.issue_upgrade(player_id, *upgrade_type);
             }
         }
     }
@@ -322,17 +394,32 @@ impl Game {
     pub fn step(&mut self) {
         self.current_frame += 1;
 
-        // Phase 1: Movement.
+        // Phase 1: Movement + morph/construction timers.
         for slot in &mut self.units {
             if let Some(unit) = slot
                 && unit.alive
             {
-                unit.update_movement();
+                // Skip movement for units under construction or morphing.
+                if !unit.under_construction && unit.morph_timer == 0 {
+                    unit.update_movement();
+                }
                 if unit.weapon_cooldown > 0 {
                     unit.weapon_cooldown -= 1;
                 }
+                // Building construction timer.
+                if unit.under_construction {
+                    if unit.build_timer > 0 {
+                        unit.build_timer -= 1;
+                    }
+                    if unit.build_timer == 0 {
+                        unit.under_construction = false;
+                    }
+                }
             }
         }
+
+        // Phase 1b: Complete morphs (separate pass to avoid borrow issues).
+        self.update_morphs();
 
         // Phase 2: Combat — resolve attacks.
         self.update_combat();
@@ -440,6 +527,13 @@ impl Game {
     }
 
     fn issue_train(&mut self, player_id: u8, unit_type: u16) {
+        // Check resource/supply costs.
+        let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
+        let ps = &self.player_states[player_id as usize];
+        if ps.minerals < ut.mineral_cost as i32 || ps.gas < ut.gas_cost as i32 {
+            return; // Not enough resources.
+        }
+
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         for tag in &tags {
             let uid = UnitId::from_tag(*tag);
@@ -448,53 +542,153 @@ impl Game {
                 && unit.is_building
                 && unit.build_queue.len() < 5
             {
+                // Deduct resources on queue (first unit only).
+                if unit.build_queue.is_empty() {
+                    let ps = &mut self.player_states[player_id as usize];
+                    ps.minerals -= ut.mineral_cost as i32;
+                    ps.gas -= ut.gas_cost as i32;
+                }
                 unit.build_queue.push(unit_type);
+                return; // Only queue in one building.
             }
         }
     }
 
     fn issue_build(&mut self, player_id: u8, x: u16, y: u16, unit_type: u16) {
-        // Worker builds a building: create the building immediately at the position.
-        // In real BW, the worker moves to the location then starts construction over time.
-        // Simplified: instant building placement.
+        let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
+        let ps = &mut self.player_states[player_id as usize];
+
+        // Deduct resources.
+        if ps.minerals < ut.mineral_cost as i32 || ps.gas < ut.gas_cost as i32 {
+            return;
+        }
+        ps.minerals -= ut.mineral_cost as i32;
+        ps.gas -= ut.gas_cost as i32;
+
         let px = x as i32 * 32 + 16;
         let py = y as i32 * 32 + 16;
-        self.create_unit(unit_type, player_id, px, py);
+
+        if let Some(tag) = self.create_unit(unit_type, player_id, px, py) {
+            // Mark building as under construction with a build timer.
+            let uid = UnitId::from_tag(tag);
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
+                if ut.build_time > 0 {
+                    unit.under_construction = true;
+                    unit.build_timer = ut.build_time;
+                }
+                // Track supply provided by buildings.
+                self.add_supply(player_id, unit_type);
+            }
+        }
     }
 
     fn issue_unit_morph(&mut self, player_id: u8, unit_type: u16) {
-        // Morph a unit (e.g., Zergling → Lurker, Hydralisk → Lurker).
-        // Simplified: change the first selected unit's type immediately.
+        let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
+        let ps = &mut self.player_states[player_id as usize];
+
+        if ps.minerals < ut.mineral_cost as i32 || ps.gas < ut.gas_cost as i32 {
+            return;
+        }
+        ps.minerals -= ut.mineral_cost as i32;
+        ps.gas -= ut.gas_cost as i32;
+
         let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
         if let Some(&tag) = tags.first() {
             let uid = UnitId::from_tag(tag);
             if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize)
                 && unit.alive
             {
-                let flingy = self
-                    .data
-                    .flingy_for_unit(unit_type)
-                    .copied()
-                    .unwrap_or_default();
-                let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
-                unit.unit_type = unit_type;
-                unit.top_speed = flingy.top_speed;
-                unit.acceleration = flingy.acceleration;
-                unit.turn_rate = flingy.turn_rate;
-                unit.movement_type = flingy.movement_type;
-                unit.hp = ut.hitpoints;
-                unit.max_hp = ut.hitpoints;
-                unit.armor = ut.armor;
-                unit.ground_weapon = ut.ground_weapon;
-                unit.air_weapon = ut.air_weapon;
+                if ut.build_time > 0 {
+                    // Start morph timer — don't change type until complete.
+                    unit.morph_timer = ut.build_time;
+                    unit.morph_target = Some(unit_type);
+                } else {
+                    self.apply_morph_to_unit(uid.index() as usize, unit_type);
+                }
             }
         }
     }
 
     fn issue_building_morph(&mut self, player_id: u8, unit_type: u16) {
-        // Morph a building (e.g., Hatchery → Lair, Spire → Greater Spire).
-        // Same as unit morph but for buildings.
         self.issue_unit_morph(player_id, unit_type);
+    }
+
+    fn issue_research(&mut self, player_id: u8, tech_type: u8) {
+        // Deduct cost from tech data if available.
+        if let Some(tech) = self.data.tech_type(tech_type) {
+            let ps = &mut self.player_states[player_id as usize];
+            if ps.minerals < tech.mineral_cost as i32 || ps.gas < tech.gas_cost as i32 {
+                return;
+            }
+            ps.minerals -= tech.mineral_cost as i32;
+            ps.gas -= tech.gas_cost as i32;
+        }
+        // Mark tech as researched immediately (simplified — no research timer).
+        self.player_states[player_id as usize].research_tech(tech_type);
+    }
+
+    fn issue_upgrade(&mut self, player_id: u8, upgrade_type: u8) {
+        if let Some(upg) = self.data.upgrade_type(upgrade_type) {
+            let ps = &mut self.player_states[player_id as usize];
+            let next_level = ps.upgrade_level(upgrade_type) + 1;
+            let (min_cost, gas_cost) = upg.cost_at_level(next_level);
+            if ps.minerals < min_cost as i32 || ps.gas < gas_cost as i32 {
+                return;
+            }
+            ps.minerals -= min_cost as i32;
+            ps.gas -= gas_cost as i32;
+        }
+        self.player_states[player_id as usize].increment_upgrade(upgrade_type);
+    }
+
+    /// Apply a completed morph: change unit type and stats.
+    fn apply_morph_to_unit(&mut self, unit_index: usize, unit_type: u16) {
+        let flingy = self
+            .data
+            .flingy_for_unit(unit_type)
+            .copied()
+            .unwrap_or_default();
+        let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
+
+        if let Some(Some(unit)) = self.units.get_mut(unit_index) {
+            unit.unit_type = unit_type;
+            unit.top_speed = flingy.top_speed;
+            unit.acceleration = flingy.acceleration;
+            unit.turn_rate = flingy.turn_rate;
+            unit.movement_type = flingy.movement_type;
+            unit.hp = ut.hitpoints;
+            unit.max_hp = ut.hitpoints;
+            unit.armor = ut.armor;
+            unit.unit_size = ut.unit_size;
+            unit.is_air = ut.is_air();
+            unit.ground_weapon = ut.ground_weapon;
+            unit.air_weapon = ut.air_weapon;
+            let shield_hp = if ut.has_shield {
+                ut.shield_points as i32 * 256
+            } else {
+                0
+            };
+            unit.shields = shield_hp;
+            unit.max_shields = shield_hp;
+            unit.morph_timer = 0;
+            unit.morph_target = None;
+        }
+    }
+
+    /// Track supply provided by a unit type (in half-units, matching BW convention).
+    fn add_supply(&mut self, player_id: u8, unit_type: u16) {
+        let provided = match unit_type {
+            106 => 20,      // Command Center: 10 supply = 20 half-units
+            109 => 16,      // Supply Depot: 8 supply = 16 half-units
+            131..=133 => 2, // Hatchery/Lair/Hive: 1 supply = 2 half-units
+            42 => 16,       // Overlord: 8 supply = 16 half-units
+            154 => 18,      // Nexus: 9 supply = 18 half-units
+            156 => 16,      // Pylon: 8 supply = 16 half-units
+            _ => 0,
+        };
+        if provided > 0 && (player_id as usize) < MAX_PLAYERS {
+            self.player_states[player_id as usize].supply_max += provided;
+        }
     }
 
     // -- Simulation phases --
@@ -505,7 +699,7 @@ impl Game {
 
         for (i, slot) in self.units.iter().enumerate() {
             let Some(unit) = slot else { continue };
-            if !unit.alive || unit.owner >= 8 {
+            if !unit.alive || unit.owner >= 8 || unit.under_construction || unit.morph_timer > 0 {
                 continue;
             }
 
@@ -522,12 +716,14 @@ impl Game {
                 }
             }
 
-            // Auto-attack: if no explicit target and unit has a weapon,
-            // find the nearest enemy unit within acquisition range.
-            let weapon_id = unit.ground_weapon;
-            if weapon_id >= 130 {
-                continue; // No weapon.
+            // Auto-attack: find nearest enemy within acquisition range.
+            // Check both ground and air weapons.
+            let has_ground = unit.ground_weapon < 130;
+            let has_air = unit.air_weapon < 130;
+            if !has_ground && !has_air {
+                continue;
             }
+
             let acq_range = self
                 .data
                 .unit_type(unit.unit_type)
@@ -542,6 +738,13 @@ impl Game {
             for other_slot in self.units.iter() {
                 let Some(other) = other_slot else { continue };
                 if !other.alive || other.owner == unit.owner || other.owner >= 8 {
+                    continue;
+                }
+                // Check if we have a weapon that can hit this target.
+                if other.is_air && !has_air {
+                    continue;
+                }
+                if !other.is_air && !has_ground {
                     continue;
                 }
                 let dx = (unit.pixel_x - other.pixel_x) as i64;
@@ -562,16 +765,13 @@ impl Game {
             let target_uid = UnitId::from_tag(target_tag);
             let ti = target_uid.index() as usize;
 
-            // Get target position and alive status.
-            // Note: only check index, not generation — replay tags may have
-            // generation mismatches with our simulation.
             let target_info = self
                 .units
                 .get(ti)
                 .and_then(|s| s.as_ref().filter(|u| u.alive))
-                .map(|u| (u.pixel_x, u.pixel_y));
+                .map(|u| (u.pixel_x, u.pixel_y, u.is_air, u.unit_size, u.armor));
 
-            let Some((tx, ty)) = target_info else {
+            let Some((tx, ty, target_is_air, target_size, target_armor)) = target_info else {
                 self.debug_target_not_found += 1;
                 if let Some(Some(unit)) = self.units.get_mut(attacker_idx) {
                     unit.attack_target = None;
@@ -579,9 +779,13 @@ impl Game {
                 continue;
             };
 
-            // Check range and fire.
+            // Select the right weapon based on target type (air vs ground).
             let attacker = self.units[attacker_idx].as_ref().unwrap();
-            let weapon_id = attacker.ground_weapon;
+            let weapon_id = if target_is_air {
+                attacker.air_weapon
+            } else {
+                attacker.ground_weapon
+            };
             let Some(weapon) = self.data.weapon_type(weapon_id) else {
                 self.debug_no_weapon += 1;
                 continue;
@@ -595,14 +799,54 @@ impl Game {
 
             if dist_sq <= range_sq && attacker.weapon_cooldown == 0 {
                 self.debug_fires += 1;
-                let damage = weapon.damage_amount as i32 * weapon.damage_factor.max(1) as i32;
-                let target_armor = self.units[ti].as_ref().map(|u| u.armor).unwrap_or(0);
-                let effective_damage = (damage - target_armor as i32).max(1);
-                // Damage in fp8 (HP is stored in fp8).
+
+                // Base damage = amount * factor + upgrade bonus.
+                let attacker_owner = attacker.owner;
+                let upgrade_bonus = weapon.damage_bonus as i32
+                    * self.player_states[attacker_owner as usize].upgrade_level(weapon_id) as i32;
+                let base_damage = weapon.damage_amount as i32 * weapon.damage_factor.max(1) as i32
+                    + upgrade_bonus;
+
+                // Apply damage type modifier vs unit size.
+                let (num, den) = weapon.damage_type.size_modifier(target_size);
+                let modified_damage = base_damage * num as i32 / den as i32;
+
+                // Subtract armor (with upgrade bonus).
+                let armor_upgrade_id = self
+                    .data
+                    .unit_type(self.units[ti].as_ref().map(|u| u.unit_type).unwrap_or(0))
+                    .map(|ut| ut.armor_upgrade)
+                    .unwrap_or(0);
+                let armor_total = target_armor as i32
+                    + self.units[ti]
+                        .as_ref()
+                        .map(|u| {
+                            self.player_states[u.owner as usize].upgrade_level(armor_upgrade_id)
+                                as i32
+                        })
+                        .unwrap_or(0);
+                let effective_damage = if weapon.damage_type == crate::dat::DamageType::IgnoreArmor
+                {
+                    modified_damage.max(1)
+                } else {
+                    (modified_damage - armor_total).max(1)
+                };
+
                 let damage_fp8 = effective_damage * 256;
 
+                // Apply damage: shields first (shields ignore damage type), then HP.
                 if let Some(Some(target)) = self.units.get_mut(ti) {
-                    target.hp -= damage_fp8;
+                    if target.shields > 0 {
+                        // Shields absorb damage first (at full damage, ignoring armor/type).
+                        let shield_damage = damage_fp8.min(target.shields);
+                        target.shields -= shield_damage;
+                        let remaining = damage_fp8 - shield_damage;
+                        if remaining > 0 {
+                            target.hp -= remaining;
+                        }
+                    } else {
+                        target.hp -= damage_fp8;
+                    }
                     if target.hp <= 0 {
                         target.alive = false;
                     }
@@ -633,6 +877,27 @@ impl Game {
                     attacker.waypoint_index = 0;
                 }
             }
+        }
+    }
+
+    /// Process morph timers — complete morphs when timer reaches zero.
+    fn update_morphs(&mut self) {
+        let mut completed: Vec<(usize, u16)> = Vec::new();
+        for (i, slot) in self.units.iter_mut().enumerate() {
+            if let Some(unit) = slot
+                && unit.alive
+                && unit.morph_timer > 0
+            {
+                unit.morph_timer -= 1;
+                if unit.morph_timer == 0
+                    && let Some(target) = unit.morph_target
+                {
+                    completed.push((i, target));
+                }
+            }
+        }
+        for (idx, unit_type) in completed {
+            self.apply_morph_to_unit(idx, unit_type);
         }
     }
 
@@ -721,26 +986,42 @@ mod tests {
             flingy_id: 0,
             turret_unit_type: 228,
             hitpoints: 40 * 256,
+            shield_points: 0,
+            has_shield: false,
             ground_weapon: 0,
             max_ground_hits: 1,
             air_weapon: 130,
             max_air_hits: 0,
             armor: 0,
+            armor_upgrade: 0,
+            unit_size: crate::dat::UnitSize::Small,
+            elevation: 0,
             sight_range: 7,
             build_time: 30,
+            mineral_cost: 50,
+            gas_cost: 0,
+            supply_cost: 0,
             is_building: false,
         };
         let barracks_ut = UnitType {
             flingy_id: 0,
             turret_unit_type: 228,
             hitpoints: 1000 * 256,
+            shield_points: 0,
+            has_shield: false,
             ground_weapon: 130,
             max_ground_hits: 0,
             air_weapon: 130,
             max_air_hits: 0,
             armor: 1,
+            armor_upgrade: 0,
+            unit_size: crate::dat::UnitSize::Large,
+            elevation: 0,
             sight_range: 7,
             build_time: 0,
+            mineral_cost: 150,
+            gas_cost: 0,
+            supply_cost: 0,
             is_building: true,
         };
         let mut unit_types = vec![UnitType::default(); 228];
@@ -752,6 +1033,7 @@ mod tests {
             damage_bonus: 0,
             cooldown: 15,
             damage_factor: 1,
+            damage_type: crate::dat::DamageType::Normal,
             max_range: 128, // 4 tiles
         };
         let mut weapon_types = vec![WeaponType::default(); 130];
@@ -960,6 +1242,7 @@ mod tests {
         // A barracks (unit type 122) owned by player 0.
         game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)])
             .unwrap();
+        game.set_player_resources(0, 500, 500);
         let initial_count = game.unit_count();
 
         // Select barracks, train a marine.
@@ -983,6 +1266,7 @@ mod tests {
         let mut game = Game::new(test_map(), test_game_data());
         game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)])
             .unwrap();
+        game.set_player_resources(0, 500, 500);
 
         game.apply_command(0, &EngineCommand::Select(vec![0]));
         game.apply_command(0, &EngineCommand::Train { unit_type: 0 });
@@ -995,5 +1279,58 @@ mod tests {
 
         // Should have barracks + 2 marines = 3 units.
         assert_eq!(game.unit_count(), 3);
+    }
+
+    #[test]
+    fn test_train_insufficient_resources() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)])
+            .unwrap();
+        // No resources set — training should be rejected.
+
+        game.apply_command(0, &EngineCommand::Select(vec![0]));
+        game.apply_command(0, &EngineCommand::Train { unit_type: 0 });
+
+        for _ in 0..50 {
+            game.step();
+        }
+
+        // No marine should have been produced.
+        assert_eq!(game.unit_count(), 1);
+    }
+
+    #[test]
+    fn test_shields_absorb_damage() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[
+            make_chk_unit(0, 50, 50, 0, 0),  // attacker
+            make_chk_unit(1, 100, 50, 0, 1), // target
+        ])
+        .unwrap();
+
+        // Give target shields.
+        if let Some(Some(u)) = game.units.get_mut(1) {
+            u.shields = 20 * 256;
+            u.max_shields = 20 * 256;
+            u.hp = 200 * 256; // lots of HP so it survives
+            u.max_hp = 200 * 256;
+        }
+        // Give attacker lots of HP.
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.hp = 200 * 256;
+            u.max_hp = 200 * 256;
+        }
+
+        game.apply_command(0, &EngineCommand::Select(vec![0]));
+        game.apply_command(0, &EngineCommand::Attack { target_tag: 1 });
+
+        // Step a few times to land some hits.
+        for _ in 0..50 {
+            game.step();
+        }
+
+        let target = game.unit_by_tag(1).unwrap();
+        // Shields should have been reduced.
+        assert!(target.shields < 20 * 256, "shields should be damaged");
     }
 }

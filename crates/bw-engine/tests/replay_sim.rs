@@ -34,19 +34,28 @@ fn synthetic_game_data() -> GameData {
         flingy_id: 0,
         turret_unit_type: 228,
         hitpoints: 40 * 256,
+        shield_points: 0,
+        has_shield: false,
         ground_weapon: 0,
         max_ground_hits: 1,
         air_weapon: 130,
         max_air_hits: 0,
         armor: 0,
+        armor_upgrade: 0,
+        unit_size: bw_engine::UnitSize::Small,
+        elevation: 0,
         sight_range: 7,
         build_time: 100,
+        mineral_cost: 50,
+        gas_cost: 0,
+        supply_cost: 0,
         is_building: false,
     };
     let building_unit = UnitType {
         is_building: true,
         hitpoints: 1000 * 256,
         ground_weapon: 130,
+        unit_size: bw_engine::UnitSize::Large,
         ..default_unit
     };
 
@@ -61,6 +70,7 @@ fn synthetic_game_data() -> GameData {
         damage_bonus: 0,
         cooldown: 15,
         damage_factor: 1,
+        damage_type: bw_engine::DamageType::Normal,
         max_range: 128,
     };
     let weapon_types = vec![default_weapon; 130];

@@ -19,7 +19,7 @@ pub mod unit;
 pub mod vision;
 
 pub use chk_units::ChkUnit;
-pub use dat::{GameData, OrderType, TechType, UpgradeType};
+pub use dat::{DamageType, GameData, OrderType, TechType, UnitSize, UpgradeType};
 pub use direction::Direction;
 pub use error::{EngineError, Result};
 pub use fp8::{Fp8, XY};

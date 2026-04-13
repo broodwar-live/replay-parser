@@ -21,3 +21,4 @@ bitflags = "2"
 serde = { version = "1", features = ["derive"] }
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
+rustler = "0.36"

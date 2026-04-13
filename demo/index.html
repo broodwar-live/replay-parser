@@ -181,17 +181,16 @@ function drawFrame() {
 
   // Draw units.
   const data = gameSim.unitData();
-  const unitCount = data.length / 4;
+  const unitCount = data.length / 6;
   for (let i = 0; i < unitCount; i++) {
-    const px = data[i * 4];
-    const py = data[i * 4 + 1];
-    const unitType = data[i * 4 + 2];
-    const owner = data[i * 4 + 3];
+    const px = data[i * 6];
+    const py = data[i * 6 + 1];
+    const unitType = data[i * 6 + 2];
+    const owner = data[i * 6 + 3];
 
     const sx = px * scale;
     const sy = py * scale;
 
-    // Buildings (unit type 106-227 roughly) get squares, units get circles.
     const isBuilding = unitType >= 106 && unitType <= 202;
     const isResource = unitType >= 176 && unitType <= 199;
     const color = owner >= 8 || isResource ? NEUTRAL_COLOR : (PLAYER_COLORS[owner] || NEUTRAL_COLOR);
@@ -207,7 +206,20 @@ function drawFrame() {
     }
   }
 
-  frameInfo.textContent = `Frame ${gameSim.currentFrame} / ${totalFrames} — ${unitCount} units`;
+  // Player resources.
+  const pd = gameSim.playerData();
+  let resText = '';
+  for (let p = 0; p < 2; p++) {
+    const m = pd[p * 4];
+    const g = pd[p * 4 + 1];
+    const su = pd[p * 4 + 2];
+    const sm = pd[p * 4 + 3];
+    if (m || g || su || sm) {
+      resText += `P${p+1}: ${m}m ${g}g ${su}/${sm}  `;
+    }
+  }
+
+  frameInfo.textContent = `Frame ${gameSim.currentFrame} / ${totalFrames} — ${unitCount} units  ${resText}`;
 }
 
 function animate() {

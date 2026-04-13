@@ -32,13 +32,14 @@ fn synthetic_game_data() -> GameData {
 
     let default_unit = UnitType {
         flingy_id: 0,
-        turret_unit_type: 228, // no turret
+        turret_unit_type: 228,
         hitpoints: 40 * 256,
         ground_weapon: 0,
         max_ground_hits: 1,
         air_weapon: 130,
         max_air_hits: 0,
         armor: 0,
+        sight_range: 7,
         build_time: 100,
         is_building: false,
     };
@@ -145,6 +146,23 @@ fn translate(cmd: &replay_core::command::Command) -> Option<EngineCommand> {
         Command::Stop { .. } => Some(EngineCommand::Stop),
         Command::Train { unit_type } => Some(EngineCommand::Train {
             unit_type: *unit_type,
+        }),
+        Command::Build { x, y, unit_type, .. } => Some(EngineCommand::Build {
+            x: *x,
+            y: *y,
+            unit_type: *unit_type,
+        }),
+        Command::UnitMorph { unit_type } => Some(EngineCommand::UnitMorph {
+            unit_type: *unit_type,
+        }),
+        Command::BuildingMorph { unit_type } => Some(EngineCommand::BuildingMorph {
+            unit_type: *unit_type,
+        }),
+        Command::Research { tech_type } => Some(EngineCommand::Research {
+            tech_type: *tech_type,
+        }),
+        Command::Upgrade { upgrade_type } => Some(EngineCommand::Upgrade {
+            upgrade_type: *upgrade_type,
         }),
         _ => None,
     }

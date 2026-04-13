@@ -8,9 +8,21 @@ use crate::pathfind;
 use crate::regions::RegionMap;
 use crate::selection::SelectionState;
 use crate::unit::{MoveState, UnitId, UnitState};
+use crate::vision::VisionMap;
 
 /// Maximum number of units BW supports.
 pub const MAX_UNITS: usize = 1700;
+/// Maximum players.
+pub const MAX_PLAYERS: usize = 8;
+
+/// Per-player resource and supply state.
+#[derive(Debug, Clone, Default)]
+pub struct PlayerState {
+    pub minerals: i32,
+    pub gas: i32,
+    pub supply_used: i32,   // in half-units (Marine = 2, Zergling = 1)
+    pub supply_max: i32,    // in half-units
+}
 
 /// Commands that the engine understands.
 #[derive(Debug, Clone)]
@@ -24,6 +36,11 @@ pub enum EngineCommand {
     Attack { target_tag: u16 },
     Stop,
     Train { unit_type: u16 },
+    Build { x: u16, y: u16, unit_type: u16 },
+    UnitMorph { unit_type: u16 },
+    BuildingMorph { unit_type: u16 },
+    Research { tech_type: u8 },
+    Upgrade { upgrade_type: u8 },
 }
 
 /// The game simulation state.
@@ -35,11 +52,15 @@ pub struct Game {
     units: Vec<Option<UnitState>>,
     selection: SelectionState,
     next_unit_index: u16,
+    pub player_states: [PlayerState; MAX_PLAYERS],
+    pub vision: VisionMap,
 }
 
 impl Game {
     pub fn new(map: Map, data: GameData) -> Self {
         let region_map = RegionMap::from_map(&map);
+        let w = map.width();
+        let h = map.height();
         Self {
             data,
             map,
@@ -48,7 +69,22 @@ impl Game {
             units: vec![None; MAX_UNITS],
             selection: SelectionState::default(),
             next_unit_index: 0,
+            player_states: Default::default(),
+            vision: VisionMap::new(w, h),
         }
+    }
+
+    /// Set initial resources for a player (default: 50 minerals, 0 gas in melee).
+    pub fn set_player_resources(&mut self, player_id: u8, minerals: i32, gas: i32) {
+        if (player_id as usize) < MAX_PLAYERS {
+            self.player_states[player_id as usize].minerals = minerals;
+            self.player_states[player_id as usize].gas = gas;
+        }
+    }
+
+    /// Get player state.
+    pub fn player_state(&self, player_id: u8) -> Option<&PlayerState> {
+        self.player_states.get(player_id as usize)
     }
 
     /// Load initial units from CHK UNIT section entries.
@@ -187,9 +223,10 @@ impl Game {
 
     /// Create melee starting units for each player.
     ///
-    /// Call after `load_initial_units`. For each player with a start location
-    /// in the CHK, creates the standard starting units (resource depot + workers).
-    /// `player_races` maps player_id -> race (0=Zerg, 1=Terran, 2=Protoss).
+    /// Matches OpenBW's `create_starting_units` order (bwgame.h:21147):
+    /// 1. Resource depot at start location
+    /// 2. For Zerg: 2 larvae + overlord
+    /// 3. 4 workers at start location
     pub fn create_melee_starting_units(
         &mut self,
         start_locations: &[(u8, i32, i32)], // (player_id, x, y)
@@ -197,37 +234,33 @@ impl Game {
     ) {
         let race_map: std::collections::HashMap<u8, u8> =
             player_races.iter().copied().collect();
+        let map_w = self.map.width_px() as i32;
+        let map_h = self.map.height_px() as i32;
 
         for &(player_id, x, y) in start_locations {
             let race = race_map.get(&player_id).copied().unwrap_or(1);
 
-            match race {
-                0 => {
-                    // Zerg: Hatchery (142) + 4 Drones (42) + Overlord (43)
-                    self.create_unit(142, player_id, x, y); // Hatchery
-                    // BW spawns 2 larvae for the starting hatchery.
-                    self.create_unit(35, player_id, x - 32, y + 32); // Larva
-                    self.create_unit(35, player_id, x, y + 32);      // Larva
-                    // Then Overlord, then 4 Drones.
-                    self.create_unit(43, player_id, x + 32, y - 64); // Overlord
-                    for i in 0..4 {
-                        self.create_unit(42, player_id, x - 48 + i * 24, y + 48); // Drone
-                    }
-                }
-                2 => {
-                    // Protoss: Nexus (154) + 4 Probes (64)
-                    self.create_unit(154, player_id, x, y); // Nexus
-                    for i in 0..4 {
-                        self.create_unit(64, player_id, x - 48 + i * 24, y + 48); // Probe
-                    }
-                }
-                _ => {
-                    // Terran: Command Center (117) + 4 SCVs (7)
-                    self.create_unit(117, player_id, x, y); // Command Center
-                    for i in 0..4 {
-                        self.create_unit(7, player_id, x - 48 + i * 24, y + 48); // SCV
-                    }
-                }
+            // 1. Resource depot.
+            let (depot_type, worker_type) = match race {
+                0 => (142u16, 42u16), // Hatchery, Drone
+                2 => (154, 64),       // Nexus, Probe
+                _ => (117, 7),        // Command Center, SCV
+            };
+            self.create_unit(depot_type, player_id, x, y);
+
+            // 2. Zerg: 2 larvae + overlord.
+            if race == 0 {
+                self.create_unit(35, player_id, x - 32, y + 32); // Larva
+                self.create_unit(35, player_id, x + 32, y + 32); // Larva
+                // Overlord placed opposite side of map center from start.
+                let ox = if x >= map_w / 2 { x - 64 } else { x + 64 };
+                let oy = if y >= map_h / 2 { y - 64 } else { y + 64 };
+                self.create_unit(43, player_id, ox, oy); // Overlord
+            }
+
+            // 3. Four workers at start location.
+            for _ in 0..4 {
+                self.create_unit(worker_type, player_id, x, y);
             }
         }
     }
@@ -262,6 +295,18 @@ impl Game {
             EngineCommand::Train { unit_type } => {
                 self.issue_train(player_id, *unit_type);
             }
+            EngineCommand::Build { x, y, unit_type } => {
+                self.issue_build(player_id, *x, *y, *unit_type);
+            }
+            EngineCommand::UnitMorph { unit_type } => {
+                self.issue_unit_morph(player_id, *unit_type);
+            }
+            EngineCommand::BuildingMorph { unit_type } => {
+                self.issue_building_morph(player_id, *unit_type);
+            }
+            EngineCommand::Research { .. } | EngineCommand::Upgrade { .. } => {
+                // Research/Upgrade: tracked for completeness but no gameplay effect yet.
+            }
         }
     }
 
@@ -286,6 +331,11 @@ impl Game {
 
         // Phase 3: Production — advance build timers.
         self.update_production();
+
+        // Phase 4: Vision — update visibility (every 4 frames for perf).
+        if self.current_frame % 4 == 0 {
+            self.update_vision();
+        }
     }
 
     /// Step to a target frame.
@@ -393,6 +443,46 @@ impl Game {
                 }
             }
         }
+    }
+
+    fn issue_build(&mut self, player_id: u8, x: u16, y: u16, unit_type: u16) {
+        // Worker builds a building: create the building immediately at the position.
+        // In real BW, the worker moves to the location then starts construction over time.
+        // Simplified: instant building placement.
+        let px = x as i32 * 32 + 16;
+        let py = y as i32 * 32 + 16;
+        self.create_unit(unit_type, player_id, px, py);
+    }
+
+    fn issue_unit_morph(&mut self, player_id: u8, unit_type: u16) {
+        // Morph a unit (e.g., Zergling → Lurker, Hydralisk → Lurker).
+        // Simplified: change the first selected unit's type immediately.
+        let tags: Vec<u16> = self.selection.selected_tags(player_id).to_vec();
+        if let Some(&tag) = tags.first() {
+            let uid = UnitId::from_tag(tag);
+            if let Some(Some(unit)) = self.units.get_mut(uid.index() as usize) {
+                if unit.id.generation() == uid.generation() && unit.alive {
+                    let flingy = self.data.flingy_for_unit(unit_type).copied().unwrap_or_default();
+                    let ut = self.data.unit_type(unit_type).copied().unwrap_or_default();
+                    unit.unit_type = unit_type;
+                    unit.top_speed = flingy.top_speed;
+                    unit.acceleration = flingy.acceleration;
+                    unit.turn_rate = flingy.turn_rate;
+                    unit.movement_type = flingy.movement_type;
+                    unit.hp = ut.hitpoints;
+                    unit.max_hp = ut.hitpoints;
+                    unit.armor = ut.armor;
+                    unit.ground_weapon = ut.ground_weapon;
+                    unit.air_weapon = ut.air_weapon;
+                }
+            }
+        }
+    }
+
+    fn issue_building_morph(&mut self, player_id: u8, unit_type: u16) {
+        // Morph a building (e.g., Hatchery → Lair, Spire → Greater Spire).
+        // Same as unit morph but for buildings.
+        self.issue_unit_morph(player_id, unit_type);
     }
 
     // -- Simulation phases --
@@ -523,6 +613,29 @@ impl Game {
             self.create_unit(unit_type, owner, x, y);
         }
     }
+
+    fn update_vision(&mut self) {
+        self.vision.clear_visible();
+        for slot in &self.units {
+            if let Some(unit) = slot {
+                if unit.alive && unit.owner < 8 {
+                    let sight = self
+                        .data
+                        .unit_type(unit.unit_type)
+                        .map(|ut| ut.sight_range)
+                        .unwrap_or(7);
+                    self.vision
+                        .reveal(unit.pixel_x, unit.pixel_y, sight, unit.owner);
+                }
+            }
+        }
+    }
+
+    /// Get the visibility grid for a player.
+    /// 0 = fog, 1 = explored, 2 = visible.
+    pub fn visibility_grid(&self, player: u8) -> Vec<u8> {
+        self.vision.visibility_grid(player)
+    }
 }
 
 #[cfg(test)]
@@ -546,13 +659,14 @@ mod tests {
 
         let marine_ut = UnitType {
             flingy_id: 0,
-            turret_unit_type: 228, // no turret
+            turret_unit_type: 228,
             hitpoints: 40 * 256,
             ground_weapon: 0,
             max_ground_hits: 1,
             air_weapon: 130,
             max_air_hits: 0,
             armor: 0,
+            sight_range: 7,
             build_time: 30,
             is_building: false,
         };
@@ -565,6 +679,7 @@ mod tests {
             air_weapon: 130,
             max_air_hits: 0,
             armor: 1,
+            sight_range: 7,
             build_time: 0,
             is_building: true,
         };

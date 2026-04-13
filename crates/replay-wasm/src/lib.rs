@@ -197,8 +197,8 @@ impl GameSim {
         self.inner.unit_count()
     }
 
-    /// Get all alive units as a flat array: [x, y, unitType, owner, ...] repeated.
-    /// Each unit is 4 consecutive i32 values.
+    /// Get all alive units as a flat array: [x, y, unitType, owner, hp, maxHp] repeated.
+    /// Each unit is 6 consecutive i32 values.
     #[wasm_bindgen(js_name = "unitData")]
     pub fn unit_data(&self) -> Vec<i32> {
         let mut data = Vec::new();
@@ -207,6 +207,32 @@ impl GameSim {
             data.push(unit.pixel_y);
             data.push(unit.unit_type as i32);
             data.push(unit.owner as i32);
+            data.push(unit.hp);
+            data.push(unit.max_hp);
+        }
+        data
+    }
+
+    /// Get the visibility grid for a player.
+    /// Flat Uint8Array: 0=fog, 1=explored, 2=visible. Row-major, tile dimensions.
+    #[wasm_bindgen(js_name = "visibilityGrid")]
+    pub fn visibility_grid(&self, player: u8) -> Vec<u8> {
+        self.inner.visibility_grid(player)
+    }
+
+    /// Get player resources as [minerals, gas, supplyUsed, supplyMax] x 8 players.
+    #[wasm_bindgen(js_name = "playerData")]
+    pub fn player_data(&self) -> Vec<i32> {
+        let mut data = Vec::new();
+        for i in 0..8u8 {
+            if let Some(ps) = self.inner.player_state(i) {
+                data.push(ps.minerals);
+                data.push(ps.gas);
+                data.push(ps.supply_used);
+                data.push(ps.supply_max);
+            } else {
+                data.extend_from_slice(&[0, 0, 0, 0]);
+            }
         }
         data
     }
@@ -257,6 +283,23 @@ fn translate_command(cmd: &replay_core::command::Command) -> Option<bw_engine::E
         Command::Stop { .. } => Some(bw_engine::EngineCommand::Stop),
         Command::Train { unit_type } => Some(bw_engine::EngineCommand::Train {
             unit_type: *unit_type,
+        }),
+        Command::Build { x, y, unit_type, .. } => Some(bw_engine::EngineCommand::Build {
+            x: *x,
+            y: *y,
+            unit_type: *unit_type,
+        }),
+        Command::UnitMorph { unit_type } => Some(bw_engine::EngineCommand::UnitMorph {
+            unit_type: *unit_type,
+        }),
+        Command::BuildingMorph { unit_type } => Some(bw_engine::EngineCommand::BuildingMorph {
+            unit_type: *unit_type,
+        }),
+        Command::Research { tech_type } => Some(bw_engine::EngineCommand::Research {
+            tech_type: *tech_type,
+        }),
+        Command::Upgrade { upgrade_type } => Some(bw_engine::EngineCommand::Upgrade {
+            upgrade_type: *upgrade_type,
         }),
         _ => None,
     }

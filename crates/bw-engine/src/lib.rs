@@ -12,13 +12,14 @@ pub mod selection;
 pub mod tile;
 pub mod tileset;
 pub mod unit;
+pub mod vision;
 
 pub use chk_units::ChkUnit;
 pub use dat::GameData;
 pub use direction::Direction;
 pub use error::{EngineError, Result};
 pub use fp8::{Fp8, XY};
-pub use game::{EngineCommand, Game};
+pub use game::{EngineCommand, Game, PlayerState};
 pub use map::Map;
 pub use regions::RegionMap;
 pub use selection::SelectionState;

@@ -4,7 +4,9 @@ pub mod error;
 pub mod format;
 pub mod gamedata;
 pub mod header;
+pub mod metadata;
 pub mod section;
+pub mod similarity;
 pub mod timeline;
 
 use analysis::{ApmSample, BuildOrderEntry, PlayerApm};
@@ -12,6 +14,7 @@ use command::GameCommand;
 use error::{ReplayError, Result};
 use format::Format;
 use header::Header;
+use metadata::GameMetadata;
 use timeline::TimelineSnapshot;
 
 /// A fully parsed replay.
@@ -22,6 +25,8 @@ pub struct Replay {
     pub build_order: Vec<BuildOrderEntry>,
     pub player_apm: Vec<PlayerApm>,
     pub timeline: Vec<TimelineSnapshot>,
+    /// High-level game metadata: matchup, normalized map name, winner.
+    pub metadata: GameMetadata,
     /// Raw CHK map data (decompressed section 3). Can be fed to `bw_engine::Map::from_chk`.
     pub map_data: Vec<u8>,
 }
@@ -110,12 +115,16 @@ pub fn parse(data: &[u8]) -> Result<Replay> {
     let player_ids: Vec<u8> = hdr.players.iter().map(|p| p.player_id).collect();
     let tl = timeline::build_timeline(&build_order, &player_ids);
 
+    // Derive game metadata.
+    let meta = metadata::extract_metadata(&hdr, &commands);
+
     Ok(Replay {
         header: hdr,
         commands,
         build_order,
         player_apm,
         timeline: tl,
+        metadata: meta,
         map_data,
     })
 }

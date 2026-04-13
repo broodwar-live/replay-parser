@@ -4,6 +4,8 @@ use crate::direction::Direction;
 use crate::error::Result;
 use crate::fp8::{Fp8, XY};
 use crate::map::Map;
+use crate::pathfind;
+use crate::regions::RegionMap;
 use crate::selection::SelectionState;
 use crate::unit::{MoveState, UnitId, UnitState};
 
@@ -27,6 +29,7 @@ pub enum EngineCommand {
 pub struct Game {
     data: GameData,
     map: Map,
+    region_map: RegionMap,
     current_frame: u32,
     units: Vec<Option<UnitState>>,
     selection: SelectionState,
@@ -35,9 +38,11 @@ pub struct Game {
 
 impl Game {
     pub fn new(map: Map, data: GameData) -> Self {
+        let region_map = RegionMap::from_map(&map);
         Self {
             data,
             map,
+            region_map,
             current_frame: 0,
             units: vec![None; MAX_UNITS],
             selection: SelectionState::default(),
@@ -79,6 +84,8 @@ impl Game {
                 current_speed: Fp8::ZERO,
                 move_state: MoveState::AtRest,
                 move_target: None,
+                waypoints: Vec::new(),
+                waypoint_index: 0,
                 top_speed: flingy.top_speed,
                 acceleration: flingy.acceleration,
                 halt_distance: flingy.halt_distance,
@@ -175,6 +182,19 @@ impl Game {
                 if unit.id.generation() == uid.generation() && unit.alive {
                     unit.move_target = Some((x, y));
                     unit.move_state = MoveState::Moving;
+
+                    // Compute path using region-based A*.
+                    let waypoints = pathfind::find_path(
+                        &self.region_map,
+                        unit.pixel_x,
+                        unit.pixel_y,
+                        x as i32,
+                        y as i32,
+                    )
+                    .unwrap_or_else(|| vec![(x as i32, y as i32)]);
+
+                    unit.waypoints = waypoints;
+                    unit.waypoint_index = 0;
                 }
             }
         }
@@ -190,6 +210,8 @@ impl Game {
                     unit.move_state = MoveState::AtRest;
                     unit.velocity = XY::ZERO;
                     unit.current_speed = Fp8::ZERO;
+                    unit.waypoints.clear();
+                    unit.waypoint_index = 0;
                 }
             }
         }

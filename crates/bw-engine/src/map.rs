@@ -121,6 +121,13 @@ impl Map {
         self.tile(tx, ty).is_some_and(|t| t.is_walkable())
     }
 
+    /// Whether tile (tx, ty) has any walkable mini-tiles (fully or partially walkable).
+    #[must_use]
+    pub fn is_tile_passable(&self, tx: u16, ty: u16) -> bool {
+        self.tile(tx, ty)
+            .is_some_and(|t| t.is_walkable() || t.is_partially_walkable())
+    }
+
     /// Ground height at tile (tx, ty).
     #[must_use]
     pub fn tile_ground_height(&self, tx: u16, ty: u16) -> Option<GroundHeight> {

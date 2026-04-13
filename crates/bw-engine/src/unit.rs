@@ -64,6 +64,10 @@ pub struct UnitState {
     pub move_state: MoveState,
     pub move_target: Option<(u16, u16)>,
 
+    // Pathfinding waypoints (pixel coords). Unit moves through these in order.
+    pub waypoints: Vec<(i32, i32)>,
+    pub waypoint_index: usize,
+
     // Flingy params (cached from GameData)
     pub top_speed: i32,
     pub acceleration: i16,
@@ -78,25 +82,45 @@ impl UnitState {
         if self.move_state != MoveState::Moving {
             return;
         }
-        let Some((tx, ty)) = self.move_target else {
+
+        // Determine current steering target: current waypoint or move_target.
+        let (tx, ty) = if self.waypoint_index < self.waypoints.len() {
+            self.waypoints[self.waypoint_index]
+        } else if let Some((mx, my)) = self.move_target {
+            (mx as i32, my as i32)
+        } else {
             self.move_state = MoveState::AtRest;
             return;
         };
 
-        let target = XY::from_pixels(tx as i32, ty as i32);
+        let target = XY::from_pixels(tx, ty);
         let delta = target - self.exact_position;
 
-        // Check arrival: if close enough, snap to target.
+        // Check arrival at current waypoint.
         let dist_sq = delta.length_squared();
         let arrival_threshold = (self.top_speed as i64).max(256) * 2;
         if dist_sq <= arrival_threshold * arrival_threshold {
+            // Snap to waypoint.
             self.exact_position = target;
-            self.pixel_x = tx as i32;
-            self.pixel_y = ty as i32;
+            self.pixel_x = tx;
+            self.pixel_y = ty;
+
+            // Advance to next waypoint.
+            if self.waypoint_index < self.waypoints.len() {
+                self.waypoint_index += 1;
+                if self.waypoint_index < self.waypoints.len() {
+                    // More waypoints — keep moving, don't stop speed.
+                    return;
+                }
+            }
+
+            // All waypoints consumed — arrived at final destination.
             self.velocity = XY::ZERO;
             self.current_speed = Fp8::ZERO;
             self.move_state = MoveState::Arrived;
             self.move_target = None;
+            self.waypoints.clear();
+            self.waypoint_index = 0;
             return;
         }
 
@@ -165,6 +189,8 @@ mod tests {
             current_speed: Fp8::ZERO,
             move_state: MoveState::AtRest,
             move_target: None,
+            waypoints: Vec::new(),
+            waypoint_index: 0,
             // Marine-like movement: speed ~4 px/frame, accel ~1, turn_rate ~20
             top_speed: 4 * 256, // 4.0 in fp8
             acceleration: 256,  // 1.0 in fp8
@@ -279,5 +305,26 @@ mod tests {
             unit.current_speed.raw(),
             unit.top_speed
         );
+    }
+
+    #[test]
+    fn test_waypoint_following() {
+        let mut unit = test_unit(100, 100);
+        unit.move_state = MoveState::Moving;
+        unit.waypoints = vec![(200, 100), (200, 200)];
+        unit.waypoint_index = 0;
+        unit.move_target = Some((200, 200));
+
+        // Step until arrived.
+        for _ in 0..500 {
+            unit.update_movement();
+            if unit.move_state == MoveState::Arrived {
+                break;
+            }
+        }
+
+        assert_eq!(unit.move_state, MoveState::Arrived);
+        assert_eq!(unit.pixel_x, 200);
+        assert_eq!(unit.pixel_y, 200);
     }
 }

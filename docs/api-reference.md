@@ -119,8 +119,18 @@ let map = Map::from_chk(&chk, &cv5, &vf4)?;
 map.is_walkable(mx, my)         // bool — mini-tile
 map.ground_height(mx, my)       // Option<GroundHeight>
 
-// Game data
+// Game data (basic)
 let data = GameData::from_dat_full(&units_dat, &flingy_dat, &weapons_dat)?;
+
+// Game data (all .dat files)
+let data = GameData::from_dat_all(
+    &units_dat, &flingy_dat, &weapons_dat,
+    &techdata_dat, &upgrades_dat, &orders_dat,
+)?;
+data.tech_type(0)                // Option<&TechType> — Stim Packs
+data.upgrade_type(27)            // Option<&UpgradeType> — Metabolic Boost
+data.upgrade_type(0).unwrap().cost_at_level(2)  // (minerals, gas) at level 2
+data.order_type(0x0A)            // Option<&OrderType> — AttackUnit
 
 // Simulation
 let mut game = Game::new(map, data);
@@ -138,4 +148,95 @@ for unit in game.units() {
 }
 game.player_state(0)             // Option<&PlayerState>
 game.visibility_grid(0)          // Vec<u8>
+```
+
+### MPQ Archives
+
+```rust
+use bw_engine::MpqArchive;
+
+let archive = MpqArchive::from_bytes(std::fs::read("StarDat.mpq")?)?;
+
+// Read a file by path
+let units_dat = archive.read_file("arr\\units.dat")?;
+let flingy_dat = archive.read_file("arr\\flingy.dat")?;
+
+// Check if a file exists
+archive.contains("arr\\weapons.dat")  // bool
+
+// List files (if archive has a listfile)
+if let Some(files) = archive.list_files() {
+    for f in files { println!("{f}"); }
+}
+```
+
+### SCX/SCM Map Files
+
+```rust
+use bw_engine::ScxMap;
+
+let scx = ScxMap::from_bytes(std::fs::read("map.scx")?)?;
+
+scx.dimensions()         // (width, height) in tiles
+scx.tileset_index()      // u16 (0-7)
+scx.tileset()?           // Tileset enum
+scx.units                // Vec<ChkUnit> — unit placements
+scx.chk_data             // Vec<u8> — raw CHK for Map::from_chk
+
+// Build a Map with tileset files
+let map = scx.to_map(&cv5_data, &vf4_data)?;
+```
+
+### String Tables (TBL)
+
+```rust
+use bw_engine::StringTable;
+
+let tbl = StringTable::from_bytes(&stat_txt_tbl_data)?;
+
+tbl.get(0)     // Option<&str> — first string
+tbl.len()      // usize — number of strings
+for s in tbl.iter() { println!("{s}"); }
+```
+
+### GRP Sprites
+
+```rust
+use bw_engine::Grp;
+
+let grp = Grp::from_bytes(&grp_data)?;
+
+grp.width              // u16 — max frame width
+grp.height             // u16 — max frame height
+grp.frame_count()      // usize
+
+let frame = &grp.frames[0];
+frame.x_offset         // u8 — left padding
+frame.y_offset         // u8 — top padding
+frame.width            // u8 — drawn width
+frame.height           // u8 — drawn height
+frame.pixels           // Vec<u8> — palette indices (0 = transparent)
+```
+
+### Tileset Rendering (VX4, VR4, WPE)
+
+```rust
+use bw_engine::{Vx4Data, Vr4Data, Palette};
+
+// VX4: megatile → mini-tile graphic references
+let vx4 = Vx4Data::from_bytes(&vx4_data)?;
+let entry = vx4.get(megatile_idx).unwrap();
+entry.vr4_index(0)     // u16 — VR4 image index for mini-tile 0
+entry.is_flipped(0)    // bool — horizontal flip
+
+// VR4: 8x8 mini-tile pixel data
+let vr4 = Vr4Data::from_bytes(&vr4_data)?;
+let tile = vr4.get(vr4_index).unwrap();
+tile.pixel(3, 2)       // u8 — palette index at (x=3, y=2)
+tile.row(0)            // &[u8] — 8 pixels
+
+// WPE: 256-color palette
+let palette = Palette::from_bytes(&wpe_data)?;
+palette.color(42)      // PaletteColor { r, g, b }
+palette.to_rgba(42)    // u32 — 0xRRGGBBAA
 ```

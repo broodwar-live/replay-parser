@@ -71,11 +71,16 @@ The [demo page](demo/index.html) accepts a `.rep` file plus optional game data f
 |---------|---------------|-------------|
 | **Replay Parsing** | `.rep` only | Header, players, commands, build orders, APM, timeline |
 | **Map Terrain** | + CV5, VF4 | Walkability grid, height map, tileset identification |
+| **Map Rendering** | + VX4, VR4, WPE | Mini-tile pixel data, palette colors, tile graphic references |
 | **Unit Simulation** | + units.dat, flingy.dat | Movement physics, acceleration, turning, waypoint following |
 | **Pathfinding** | (included) | Tile-level A* with region fallback, diagonal corner prevention |
 | **Combat** | + weapons.dat | Weapon damage, cooldowns, range checks, unit death |
+| **Tech & Upgrades** | + techdata.dat, upgrades.dat | Research costs/times, upgrade level scaling |
 | **Production** | (included) | Build queues, train timers, unit spawning |
 | **Fog of War** | (included) | Per-player visibility and exploration grids |
+| **MPQ Archives** | `.mpq` files | Read game data archives and `.scx`/`.scm` map files |
+| **String Tables** | `stat_txt.tbl` | Data-driven unit/tech/upgrade names (replaces hardcoded lookups) |
+| **Sprites** | `.grp` files | RLE-decoded frame pixel data for units and buildings |
 
 ### Replay Format Support
 
@@ -92,7 +97,7 @@ Each crate has its own [`docs/architecture.md`](crates/replay-core/docs/architec
 | Crate | Description |
 |-------|-------------|
 | [`replay-core`](crates/replay-core/) | Parse `.rep` files into structured Rust types. 40+ command variants, build order extraction, APM analysis, timeline generation. |
-| [`bw-engine`](crates/bw-engine/) | Selective BW engine reimplementation. Map terrain, unit simulation with fp8 physics, tile-level A* pathfinding, combat, production, fog of war. 15 modules. |
+| [`bw-engine`](crates/bw-engine/) | Selective BW engine reimplementation. Map terrain, unit simulation with fp8 physics, tile-level A* pathfinding, combat, production, fog of war. Also includes parsers for BW native file formats: MPQ archives, SCX/SCM maps, TBL string tables, GRP sprites, and full .dat game data. 21 modules. |
 | [`replay-wasm`](crates/replay-wasm/) | WASM bindings via wasm-bindgen. `parseReplay()`, `GameMap`, `GameSim` with frame stepping and bulk data queries. |
 | [`replay-nif`](crates/replay-nif/) | Elixir NIF bindings via Rustler (stub). |
 
@@ -106,6 +111,9 @@ The simulation engine reimplements BW subsystems from the [OpenBW](https://githu
               units.dat ──────────┤
               flingy.dat ─────────┤
               weapons.dat ────────┤
+              techdata.dat ───────┤
+              upgrades.dat ───────┤
+              orders.dat ─────────┤
               CV5 + VF4 ──────────┤
                                   ▼
                             bw-engine::Game
@@ -124,6 +132,13 @@ The simulation engine reimplements BW subsystems from the [OpenBW](https://githu
               Unit Positions   Fog of War   Player State
               (x, y, type,    (visible,     (minerals,
                owner, HP)      explored)     gas, supply)
+
+File format support:
+  .mpq ──> MpqArchive ──> extract any file by path
+  .scx ──> ScxMap ────────> CHK terrain + unit placements
+  .tbl ──> StringTable ───> indexed game text strings
+  .grp ──> Grp ───────────> RLE-decoded sprite frames
+  VX4/VR4/WPE ────────────> tile graphics + palette
 ```
 
 ### Key Design Decisions
@@ -149,8 +164,8 @@ Game data files are in your StarCraft installation's `arr/` and `tileset/` direc
 ## Tests
 
 ```sh
-cargo test --workspace    # 158 tests
-cargo test -p bw-engine   # 106 unit + 6 integration (real replay fixtures)
+cargo test --workspace    # 196 tests
+cargo test -p bw-engine   # 144 unit + 6 integration (real replay fixtures)
 ```
 
 Integration tests run the full simulation pipeline against 5 real replay fixtures (modern + legacy formats, up to 53K frames) and validate crash-free execution with 89-95% command translation coverage.

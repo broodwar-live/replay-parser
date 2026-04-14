@@ -17,6 +17,8 @@
 //!   def detect_phases(_data), do: :erlang.nif_error(:not_loaded)
 //!   def estimate_skill(_data), do: :erlang.nif_error(:not_loaded)
 //!   def compare_build_orders(_data_a, _data_b, _player_index), do: :erlang.nif_error(:not_loaded)
+//!   def classify_opening(_data), do: :erlang.nif_error(:not_loaded)
+//!   def normalize_player_name(_name), do: :erlang.nif_error(:not_loaded)
 //! end
 //! ```
 
@@ -155,6 +157,34 @@ mod atoms {
         lcs_similarity,
         len_a,
         len_b,
+
+        // Classification
+        tag,
+        confidence,
+        actions_analyzed,
+
+        // Identity
+        original,
+        normalized,
+        clan_tag,
+        canonical_name,
+        aliases,
+        clan_tags,
+        races,
+        game_count,
+
+        // Stats report
+        total_replays,
+        total_1v1,
+        matchup_winrates,
+        map_popularity,
+        race_popularity,
+        matchup_durations,
+        games,
+        first_race_winrate,
+        second_race_winrate,
+        percentage,
+        avg_duration_secs,
     }
 }
 
@@ -357,6 +387,64 @@ fn compare_build_orders<'a>(
         }
         (Err(e), _) | (_, Err(e)) => Ok((atoms::error(), e.to_string()).encode(env)),
     }
+}
+
+// ---------------------------------------------------------------------------
+// NIF: classify_opening
+// ---------------------------------------------------------------------------
+
+/// Classify player openings from a replay.
+///
+/// Returns `{:ok, [%{name, tag, confidence, race, actions_analyzed}]}` or `{:error, reason}`.
+#[rustler::nif(schedule = "DirtyCpu")]
+fn classify_opening<'a>(env: Env<'a>, data: rustler::Binary) -> NifResult<Term<'a>> {
+    match replay_core::parse(data.as_slice()) {
+        Ok(replay) => {
+            let players: Vec<(u8, replay_core::header::Race)> = replay
+                .header
+                .players
+                .iter()
+                .map(|p| (p.player_id, p.race))
+                .collect();
+            let results = replay_core::classify::classify_all(&replay.build_order, &players);
+            let list = encode_classifications(env, &results);
+            Ok((atoms::ok(), list).encode(env))
+        }
+        Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NIF: normalize_player_name
+// ---------------------------------------------------------------------------
+
+/// Normalize a player name (strip clan tags, whitespace, etc.).
+///
+/// Returns `%{original, normalized, clan_tag}`.
+#[rustler::nif]
+fn normalize_player_name<'a>(env: Env<'a>, name: &str) -> NifResult<Term<'a>> {
+    let result = replay_core::identity::normalize_name(name);
+    let clan = result
+        .clan_tag
+        .as_deref()
+        .map(|s| s.encode(env))
+        .unwrap_or_else(|| rustler::types::atom::nil().encode(env));
+    let map = Term::map_from_pairs(
+        env,
+        &[
+            (
+                atoms::original().encode(env),
+                result.original.as_str().encode(env),
+            ),
+            (
+                atoms::normalized().encode(env),
+                result.normalized.as_str().encode(env),
+            ),
+            (atoms::clan_tag().encode(env), clan),
+        ],
+    )
+    .unwrap();
+    Ok(map)
 }
 
 // ---------------------------------------------------------------------------
@@ -830,6 +918,36 @@ fn encode_skill_profiles<'a>(
                     (atoms::first_action_frame().encode(env), first_action),
                     (atoms::skill_score().encode(env), p.skill_score.encode(env)),
                     (atoms::tier().encode(env), tier_atom),
+                ],
+            )
+            .unwrap()
+        })
+        .collect();
+    list.encode(env)
+}
+
+// ---------------------------------------------------------------------------
+// Classification encoding
+// ---------------------------------------------------------------------------
+
+fn encode_classifications<'a>(
+    env: Env<'a>,
+    results: &[replay_core::classify::OpeningClassification],
+) -> Term<'a> {
+    let list: Vec<Term<'a>> = results
+        .iter()
+        .map(|c| {
+            Term::map_from_pairs(
+                env,
+                &[
+                    (atoms::name().encode(env), c.name.as_str().encode(env)),
+                    (atoms::tag().encode(env), c.tag.as_str().encode(env)),
+                    (atoms::confidence().encode(env), c.confidence.encode(env)),
+                    (atoms::race().encode(env), c.race.as_str().encode(env)),
+                    (
+                        atoms::actions_analyzed().encode(env),
+                        c.actions_analyzed.encode(env),
+                    ),
                 ],
             )
             .unwrap()

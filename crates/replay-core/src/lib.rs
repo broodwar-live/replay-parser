@@ -1,9 +1,11 @@
 pub mod analysis;
+pub mod classify;
 pub mod command;
 pub mod error;
 pub mod format;
 pub mod gamedata;
 pub mod header;
+pub mod identity;
 pub mod metadata;
 pub mod phases;
 pub mod section;

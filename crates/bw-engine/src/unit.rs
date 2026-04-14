@@ -97,6 +97,18 @@ pub struct UnitState {
     pub under_construction: bool,  // building being constructed
     pub morph_timer: u16,          // frames remaining for morph (0 = not morphing)
     pub morph_target: Option<u16>, // unit type morphing into
+
+    // Energy (casters)
+    pub energy: i32,     // current energy in fp8 (0 = no energy)
+    pub max_energy: i32, // max energy in fp8
+
+    // Mining
+    pub is_worker: bool,
+    pub mining_timer: u16,          // frames until next resource delivery
+    pub mining_target: Option<u16>, // tag of mineral/geyser being mined
+
+    // Collision
+    pub collision_radius: u8, // in pixels (half-width of unit)
 }
 
 impl UnitState {
@@ -240,6 +252,12 @@ mod tests {
             under_construction: false,
             morph_timer: 0,
             morph_target: None,
+            energy: 0,
+            max_energy: 0,
+            is_worker: false,
+            mining_timer: 0,
+            mining_target: None,
+            collision_radius: 8,
         }
     }
 

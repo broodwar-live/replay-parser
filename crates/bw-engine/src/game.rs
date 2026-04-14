@@ -221,6 +221,12 @@ impl Game {
             under_construction: false,
             morph_timer: 0,
             morph_target: None,
+            energy: energy_for_type(unit_type),
+            max_energy: max_energy_for_type(unit_type),
+            is_worker: is_worker_type(unit_type),
+            mining_timer: 0,
+            mining_target: None,
+            collision_radius: collision_radius_for_type(unit_type, ut.is_building),
         };
         self.units[index as usize] = Some(unit);
 
@@ -296,6 +302,12 @@ impl Game {
             under_construction: false,
             morph_timer: 0,
             morph_target: None,
+            energy: 0,
+            max_energy: 0,
+            is_worker: false,
+            mining_timer: 0,
+            mining_target: None,
+            collision_radius: 8,
         });
     }
 
@@ -430,6 +442,19 @@ impl Game {
         // Phase 4: Vision — update visibility (every 4 frames for perf).
         if self.current_frame.is_multiple_of(4) {
             self.update_vision();
+        }
+
+        // Phase 5: Mining — workers generate resources.
+        if self.current_frame.is_multiple_of(8) {
+            self.update_mining();
+        }
+
+        // Phase 6: Energy — casters regenerate energy.
+        self.update_energy();
+
+        // Phase 7: Collision — push overlapping units apart.
+        if self.current_frame.is_multiple_of(4) {
+            self.update_collision();
         }
     }
 
@@ -672,6 +697,10 @@ impl Game {
             unit.max_shields = shield_hp;
             unit.morph_timer = 0;
             unit.morph_target = None;
+            unit.energy = energy_for_type(unit_type);
+            unit.max_energy = max_energy_for_type(unit_type);
+            unit.is_worker = is_worker_type(unit_type);
+            unit.collision_radius = collision_radius_for_type(unit_type, ut.is_building);
         }
     }
 
@@ -960,6 +989,182 @@ impl Game {
     /// 0 = fog, 1 = explored, 2 = visible.
     pub fn visibility_grid(&self, player: u8) -> Vec<u8> {
         self.vision.visibility_grid(player)
+    }
+
+    // -- Mining --
+
+    fn update_mining(&mut self) {
+        // Simplified mining: workers near mineral patches generate income every ~75 frames
+        // (~3 seconds at fastest speed, roughly one mining trip).
+        for slot in &mut self.units {
+            if let Some(unit) = slot
+                && unit.alive
+                && unit.is_worker
+                && unit.owner < 8
+                && unit.move_state == MoveState::AtRest
+                && unit.attack_target.is_none()
+            {
+                if unit.mining_timer > 0 {
+                    unit.mining_timer -= 1;
+                    if unit.mining_timer == 0 {
+                        // Deliver resources.
+                        let minerals = if unit.mining_target.is_some() { 0 } else { 8 };
+                        let gas = if unit.mining_target.is_some() { 8 } else { 0 };
+                        self.player_states[unit.owner as usize].minerals += minerals;
+                        self.player_states[unit.owner as usize].gas += gas;
+                        unit.mining_timer = 75; // Start next trip.
+                    }
+                } else {
+                    // Start mining if idle worker.
+                    unit.mining_timer = 75;
+                }
+            }
+        }
+    }
+
+    // -- Energy --
+
+    fn update_energy(&mut self) {
+        // Casters regenerate energy: +8 energy per 256 frames (fp8 units).
+        // That's roughly 1 energy per 32 frames ≈ 0.75 energy/sec at fastest.
+        for slot in &mut self.units {
+            if let Some(unit) = slot
+                && unit.alive
+                && unit.max_energy > 0
+                && unit.energy < unit.max_energy
+            {
+                unit.energy = (unit.energy + 8).min(unit.max_energy);
+            }
+        }
+    }
+
+    // -- Collision --
+
+    fn update_collision(&mut self) {
+        // Simple separation: push overlapping units apart.
+        // Only check ground units (air units don't collide).
+        // Run every 4 frames for performance.
+        let count = self.units.len();
+        for i in 0..count {
+            let (ax, ay, ar, a_alive, a_air, a_building) = {
+                match &self.units[i] {
+                    Some(u) if u.alive && !u.is_air && !u.is_building => (
+                        u.pixel_x,
+                        u.pixel_y,
+                        u.collision_radius as i32,
+                        true,
+                        u.is_air,
+                        u.is_building,
+                    ),
+                    _ => continue,
+                }
+            };
+            if !a_alive || a_air || a_building {
+                continue;
+            }
+
+            for j in (i + 1)..count {
+                let (bx, by, br, b_alive, b_air, b_building) = {
+                    match &self.units[j] {
+                        Some(u) if u.alive && !u.is_air => (
+                            u.pixel_x,
+                            u.pixel_y,
+                            u.collision_radius as i32,
+                            true,
+                            u.is_air,
+                            u.is_building,
+                        ),
+                        _ => continue,
+                    }
+                };
+                if !b_alive || b_air {
+                    continue;
+                }
+
+                let dx = ax - bx;
+                let dy = ay - by;
+                let min_dist = ar + br;
+                let dist_sq = dx as i64 * dx as i64 + dy as i64 * dy as i64;
+                let min_dist_sq = min_dist as i64 * min_dist as i64;
+
+                if dist_sq < min_dist_sq && dist_sq > 0 {
+                    // Push apart. Buildings don't move.
+                    let dist = (dist_sq as f64).sqrt() as i32;
+                    let overlap = min_dist - dist;
+                    let push = (overlap / 2).max(1);
+
+                    if dist > 0 {
+                        let nx = dx * push / dist;
+                        let ny = dy * push / dist;
+
+                        if !b_building {
+                            if let Some(Some(ua)) = self.units.get_mut(i) {
+                                ua.pixel_x += nx;
+                                ua.pixel_y += ny;
+                                ua.exact_position =
+                                    crate::fp8::XY::from_pixels(ua.pixel_x, ua.pixel_y);
+                            }
+                            if let Some(Some(ub)) = self.units.get_mut(j) {
+                                ub.pixel_x -= nx;
+                                ub.pixel_y -= ny;
+                                ub.exact_position =
+                                    crate::fp8::XY::from_pixels(ub.pixel_x, ub.pixel_y);
+                            }
+                        } else {
+                            // Only push unit A away from building B.
+                            if let Some(Some(ua)) = self.units.get_mut(i) {
+                                ua.pixel_x += nx * 2;
+                                ua.pixel_y += ny * 2;
+                                ua.exact_position =
+                                    crate::fp8::XY::from_pixels(ua.pixel_x, ua.pixel_y);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit type classification helpers
+// ---------------------------------------------------------------------------
+
+fn is_worker_type(unit_type: u16) -> bool {
+    matches!(unit_type, 7 | 41 | 64) // SCV, Drone, Probe
+}
+
+fn energy_for_type(unit_type: u16) -> i32 {
+    // Starting energy: 50 for most casters (50 * 256 = 12800 in fp8).
+    match unit_type {
+        9 => 50 * 256,  // Science Vessel
+        45 => 50 * 256, // Queen
+        46 => 50 * 256, // Defiler
+        67 => 50 * 256, // High Templar
+        63 => 50 * 256, // Dark Archon
+        34 => 50 * 256, // Medic
+        71 => 50 * 256, // Arbiter
+        _ => 0,
+    }
+}
+
+fn max_energy_for_type(unit_type: u16) -> i32 {
+    // Max energy: 200 for most casters (200 * 256 = 51200 in fp8).
+    match unit_type {
+        9 | 45 | 46 | 67 | 63 | 34 | 71 => 200 * 256,
+        _ => 0,
+    }
+}
+
+fn collision_radius_for_type(unit_type: u16, is_building: bool) -> u8 {
+    if is_building {
+        return 16; // Buildings have larger collision.
+    }
+    match unit_type {
+        39 => 16, // Ultralisk — large
+        12 => 16, // Battlecruiser
+        72 => 16, // Carrier
+        _ => 8,   // Default: 8px radius
     }
 }
 

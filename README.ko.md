@@ -16,7 +16,7 @@
     <img alt="Rust" src="https://img.shields.io/badge/Rust-1.85+-000000?logo=rust&logoColor=white&style=for-the-badge">
   </a>
   <a href="https://webassembly.org/">
-    <img alt="WASM" src="https://img.shields.io/badge/WebAssembly-322KB-654ff0?logo=webassembly&logoColor=white&style=for-the-badge">
+    <img alt="WASM" src="https://img.shields.io/badge/WebAssembly-367KB-654ff0?logo=webassembly&logoColor=white&style=for-the-badge">
   </a>
   <a href="LICENSE">
     <img alt="License" src="https://img.shields.io/badge/License-MIT-c6a0f6?style=for-the-badge">

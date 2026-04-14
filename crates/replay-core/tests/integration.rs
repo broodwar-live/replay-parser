@@ -224,3 +224,216 @@ fn test_parse_legacy_franky_vs_djscan() {
         println!("  {} ({}) — {:?}", p.name, p.race.code(), p.player_type);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Analysis features — metadata, classification, phases, skill
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_metadata_on_real_replay() {
+    let data = fixture("larva_vs_mini.rep");
+    let replay = replay_core::parse(&data).unwrap();
+
+    let meta = &replay.metadata;
+    assert!(meta.is_1v1, "larva_vs_mini should be a 1v1");
+    assert_eq!(meta.player_count, 2);
+    assert!(
+        !meta.map_name.is_empty(),
+        "normalized map name should not be empty"
+    );
+    assert!(meta.duration_secs > 0.0);
+
+    // Should detect a matchup.
+    assert!(meta.matchup.is_some(), "should detect matchup for 1v1");
+    let mu = meta.matchup.as_ref().unwrap();
+    assert!(
+        mu.code.len() == 3,
+        "matchup code should be 3 chars: {}",
+        mu.code
+    );
+    assert!(mu.code.contains('v'), "matchup code should contain 'v'");
+
+    println!("Matchup: {} (mirror={})", mu.code, mu.mirror);
+    println!("Map: {} (raw: {})", meta.map_name, meta.map_name_raw);
+    println!("Result: {:?}", meta.result);
+}
+
+#[test]
+fn test_classification_on_real_replay() {
+    let data = fixture("larva_vs_mini.rep");
+    let replay = replay_core::parse(&data).unwrap();
+
+    let players: Vec<(u8, replay_core::header::Race)> = replay
+        .header
+        .players
+        .iter()
+        .map(|p| (p.player_id, p.race))
+        .collect();
+
+    let classifications = replay_core::classify::classify_all(&replay.build_order, &players);
+    assert_eq!(classifications.len(), 2, "should classify both players");
+
+    for c in &classifications {
+        assert!(!c.name.is_empty());
+        assert!(!c.tag.is_empty());
+        assert!(c.confidence >= 0.0 && c.confidence <= 1.0);
+        assert!(c.actions_analyzed > 0);
+        println!(
+            "  {} ({}) — {} (confidence {:.0}%)",
+            c.race,
+            c.tag,
+            c.name,
+            c.confidence * 100.0
+        );
+    }
+}
+
+#[test]
+fn test_phases_on_real_replay() {
+    let data = fixture("larva_vs_mini.rep");
+    let replay = replay_core::parse(&data).unwrap();
+
+    let analysis =
+        replay_core::phases::detect_phases(&replay.build_order, replay.header.frame_count);
+
+    assert!(
+        !analysis.phases.is_empty(),
+        "should detect at least one phase"
+    );
+    assert_eq!(
+        analysis.phases[0].phase,
+        replay_core::phases::Phase::Opening,
+        "first phase should be Opening"
+    );
+
+    // Phases should be in order.
+    for i in 1..analysis.phases.len() {
+        assert!(
+            analysis.phases[i].start_frame >= analysis.phases[i - 1].start_frame,
+            "phases should be in chronological order"
+        );
+    }
+
+    println!("Phases:");
+    for p in &analysis.phases {
+        println!(
+            "  {} at {:.0}s (frame {})",
+            p.phase.name(),
+            p.start_seconds,
+            p.start_frame
+        );
+    }
+    println!(
+        "Landmarks: gas={:?} tech={:?} tier2={:?} tier3={:?} expand={:?}",
+        analysis.landmarks.first_gas,
+        analysis.landmarks.first_tech,
+        analysis.landmarks.first_tier2,
+        analysis.landmarks.first_tier3,
+        analysis.landmarks.first_expansion,
+    );
+}
+
+#[test]
+fn test_skill_on_real_replay() {
+    let data = fixture("larva_vs_mini.rep");
+    let replay = replay_core::parse(&data).unwrap();
+
+    let samples = replay.apm_over_time(60.0, 10.0);
+    let profiles = replay_core::skill::estimate_skill(
+        &replay.commands,
+        &replay.player_apm,
+        &samples,
+        replay.header.frame_count,
+    );
+
+    assert_eq!(
+        profiles.len(),
+        2,
+        "should have skill profiles for both players"
+    );
+
+    for p in &profiles {
+        assert!(p.skill_score >= 0.0 && p.skill_score <= 100.0);
+        assert!(p.apm > 0.0, "APM should be positive for real games");
+        assert!(p.eapm > 0.0, "EAPM should be positive for real games");
+        assert!(p.efficiency > 0.0 && p.efficiency <= 1.0);
+        println!(
+            "  P{}: score={:.0} tier={} apm={:.0} eapm={:.0} eff={:.0}%",
+            p.player_id,
+            p.skill_score,
+            p.tier.name(),
+            p.apm,
+            p.eapm,
+            p.efficiency * 100.0
+        );
+    }
+}
+
+#[test]
+fn test_similarity_on_real_replays() {
+    let data1 = fixture("polypoid.rep");
+    let data2 = fixture("larva_vs_mini.rep");
+    let r1 = replay_core::parse(&data1).unwrap();
+    let r2 = replay_core::parse(&data2).unwrap();
+
+    let p0_r1 = replay_core::similarity::BuildSequence::from_build_order(
+        &r1.build_order,
+        r1.header.players[0].player_id,
+    );
+    let p0_r2 = replay_core::similarity::BuildSequence::from_build_order(
+        &r2.build_order,
+        r2.header.players[0].player_id,
+    );
+
+    // Self-similarity should be 1.0.
+    let self_sim = replay_core::similarity::similarity(&p0_r1, &p0_r1);
+    assert!(
+        (self_sim - 1.0).abs() < 0.001,
+        "self-similarity should be 1.0"
+    );
+
+    // Cross-replay similarity should be between 0 and 1.
+    let cross_sim = replay_core::similarity::similarity(&p0_r1, &p0_r2);
+    assert!(cross_sim >= 0.0 && cross_sim <= 1.0);
+    println!("Self-similarity: {:.3}", self_sim);
+    println!("Cross-similarity: {:.3}", cross_sim);
+}
+
+#[test]
+fn test_stats_collector_on_real_replays() {
+    let fixtures = ["polypoid.rep", "larva_vs_mini.rep", "1v1melee.rep"];
+    let mut collector = replay_core::stats::StatsCollector::new();
+
+    for name in &fixtures {
+        let data = fixture(name);
+        if let Ok(replay) = replay_core::parse(&data) {
+            collector.add(&replay);
+        }
+    }
+
+    let report = collector.report();
+    assert!(
+        report.total_replays >= 2,
+        "should have parsed at least 2 replays"
+    );
+    assert!(!report.map_popularity.is_empty(), "should have map data");
+
+    println!(
+        "Stats: {} replays, {} 1v1",
+        report.total_replays, report.total_1v1
+    );
+    for m in &report.matchup_winrates {
+        println!(
+            "  {}: {} games, {:.0}% first race WR",
+            m.matchup,
+            m.games,
+            m.first_race_winrate * 100.0
+        );
+    }
+    for m in &report.map_popularity {
+        println!(
+            "  Map: {} ({} games, {:.1}%)",
+            m.map_name, m.games, m.percentage
+        );
+    }
+}

@@ -1960,4 +1960,197 @@ mod tests {
         // Shields should have been reduced.
         assert!(target.shields < 20 * 256, "shields should be damaged");
     }
+
+    // -- Spell tests --
+
+    #[test]
+    fn test_spell_deducts_energy() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[
+            make_chk_unit(0, 50, 50, 0, 0), // "caster" (we'll give it energy)
+            make_chk_unit(1, 80, 50, 0, 1), // target
+        ])
+        .unwrap();
+        // Give unit 0 caster energy.
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.energy = 200 * 256;
+            u.max_energy = 200 * 256;
+        }
+
+        game.apply_command(0, &EngineCommand::Select(vec![0]));
+        game.apply_command(
+            0,
+            &EngineCommand::CastSpell {
+                tech_type: 19, // Psionic Storm
+                x: 80,
+                y: 50,
+            },
+        );
+
+        let caster = game.unit_by_tag(0).unwrap();
+        assert!(
+            caster.energy < 200 * 256,
+            "energy should be deducted after spell"
+        );
+    }
+
+    // -- Rally tests --
+
+    #[test]
+    fn test_rally_point() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[make_chk_unit(0, 100, 100, 122, 0)]) // Barracks
+            .unwrap();
+        game.set_player_resources(0, 500, 500);
+
+        // Set rally point.
+        game.apply_command(0, &EngineCommand::Select(vec![0]));
+        game.apply_command(0, &EngineCommand::SetRally { x: 200, y: 100 });
+
+        // Check rally was set.
+        let barracks = game.unit_by_tag(0).unwrap();
+        assert_eq!(barracks.rally_x, 200);
+        assert_eq!(barracks.rally_y, 100);
+    }
+
+    // -- Transport tests --
+
+    #[test]
+    fn test_load_and_unload() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[
+            make_chk_unit(0, 50, 50, 0, 0), // Marine (will be loaded)
+            make_chk_unit(1, 55, 50, 0, 0), // Marine (will be loaded)
+        ])
+        .unwrap();
+
+        // Manually create a transport-like unit at index 2.
+        let tag = game.create_unit(11, 0, 60, 50); // Dropship = 11
+        assert!(tag.is_some());
+
+        // Select marines, load into transport.
+        game.apply_command(0, &EngineCommand::Select(vec![0, 1]));
+        game.apply_command(
+            0,
+            &EngineCommand::Load {
+                transport_tag: tag.unwrap(),
+            },
+        );
+
+        let transport = game.unit_by_tag(tag.unwrap()).unwrap();
+        assert!(
+            !transport.cargo.is_empty(),
+            "transport should have loaded units"
+        );
+
+        // Unload.
+        game.apply_command(0, &EngineCommand::Select(vec![tag.unwrap()]));
+        game.apply_command(0, &EngineCommand::UnloadAll);
+
+        let transport = game.unit_by_tag(tag.unwrap()).unwrap();
+        assert!(
+            transport.cargo.is_empty(),
+            "cargo should be empty after unload"
+        );
+    }
+
+    // -- Shield regen test --
+
+    #[test]
+    fn test_shield_regen() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)])
+            .unwrap();
+        // Give unit shields.
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.shields = 10 * 256; // 10 shields
+            u.max_shields = 50 * 256; // 50 max
+        }
+
+        // Step many frames.
+        for _ in 0..200 {
+            game.step();
+        }
+
+        let unit = game.unit_by_tag(0).unwrap();
+        assert!(
+            unit.shields > 10 * 256,
+            "shields should have regenerated: {}",
+            unit.shields
+        );
+    }
+
+    // -- Energy regen test --
+
+    #[test]
+    fn test_energy_regen() {
+        let mut game = Game::new(test_map(), test_game_data());
+        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)])
+            .unwrap();
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.energy = 10 * 256;
+            u.max_energy = 200 * 256;
+        }
+
+        for _ in 0..100 {
+            game.step();
+        }
+
+        let unit = game.unit_by_tag(0).unwrap();
+        assert!(
+            unit.energy > 10 * 256,
+            "energy should have regenerated: {}",
+            unit.energy
+        );
+    }
+
+    // -- Mining test --
+
+    #[test]
+    fn test_worker_mining_generates_income() {
+        let mut game = Game::new(test_map(), test_game_data());
+        // Use unit type 0 but manually mark as worker with no weapon.
+        game.load_initial_units(&[make_chk_unit(0, 50, 50, 0, 0)])
+            .unwrap();
+        if let Some(Some(u)) = game.units.get_mut(0) {
+            u.is_worker = true;
+            u.ground_weapon = 130; // No weapon — prevents auto-attack.
+        }
+        game.set_player_resources(0, 0, 0);
+
+        // Step enough for mining cycles (~75 frames per trip, checked every 8).
+        for _ in 0..700 {
+            game.step();
+        }
+
+        let ps = game.player_state(0).unwrap();
+        assert!(
+            ps.minerals > 0,
+            "worker should have mined minerals: got {}",
+            ps.minerals
+        );
+    }
+
+    // -- Collision test --
+
+    #[test]
+    fn test_units_dont_overlap() {
+        let mut game = Game::new(test_map(), test_game_data());
+        // Place two friendly units very close (same owner = no combat, but close enough to collide).
+        game.load_initial_units(&[
+            make_chk_unit(0, 50, 50, 0, 0),
+            make_chk_unit(1, 52, 50, 0, 0),
+        ])
+        .unwrap();
+
+        // Step — collision should push them apart.
+        for _ in 0..20 {
+            game.step();
+        }
+
+        let u0 = game.unit_by_tag(0).unwrap();
+        let u1 = game.unit_by_tag(1).unwrap();
+        let dist = ((u0.pixel_x - u1.pixel_x).pow(2) + (u0.pixel_y - u1.pixel_y).pow(2)) as f64;
+        assert!(dist.sqrt() > 1.0, "units should have been pushed apart");
+    }
 }
